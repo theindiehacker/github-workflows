@@ -1,0 +1,10 @@
+# jetbrain
+.idea/
+
+# VSCode
+.vscode/
+
+# credential
+.env
+
+.DS_Store

@@ -1,0 +1,267 @@
+name: "🛡️ Trivy スキャン"
+
+# main への直 push はルールセットの pull_request ルールで禁止されるため、push トリガーは持たない（PR のみで検知できる）。
+#
+# fs / image の 2 種のスキャンを 1 ワークフローの別ジョブとして定義する。共通の起動ポリシー
+# （scanners / severity / ignore-unfixed / exit-code / DB フォールバック）は scan-fs 側で
+# YAML アンカー（&trivy-*）として単一定義し、scan-image はエイリアスで参照する。
+#
+# Required workflow は対象 repo から inputs を受け取れないため、image スキャンは規約ベースで動作する:
+#   - 対象 repo にビルドマニフェスト（.github/trivy-image.yml）があればそれに従い、
+#     列挙された image だけを context / target / build-args 指定付きでビルド → スキャンする
+#   - マニフェストが無ければ Dockerfile / Dockerfile.* / *.Dockerfile を自動検出し、Dockerfile の
+#     あるディレクトリを build context としてビルド → スキャンする（複数あれば matrix で並列）
+#   - スキャン対象が 0 件（Dockerfile 無し / images: [] で opt-out）なら scan-image job を skip し、
+#     run 全体は success になる（ルールセットが ~ALL 適用のため、対象外 repo でも合格できる必要がある）
+#
+# マニフェスト（.github/trivy-image.yml）のスキーマ。自動検出では正しくビルドできない repo
+# （multi-stage の最終ステージが本番用でない、build-args が必要 等）はこれで対象を明示する。
+# ビルドに secrets が必須な Dockerfile は非対応のため、images: [] で opt-out して repo 側でスキャンする:
+#   images:
+#     - dockerfile: backend/Dockerfile  # 必須。repo ルートからの相対パス
+#       context: backend                # 任意。省略時は dockerfile のあるディレクトリ
+#       target: api                     # 任意。multi-stage のビルド対象ステージ
+#       build-args:                     # 任意。KEY: VALUE の map
+#         INFRASTRUCTURE: gcp
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_call:  # Free プラン運用の caller から呼ばれる（docs/SETUP/FREE.md）
+
+permissions:
+  contents: read
+
+# 同一 PR に連投された run のみ束ねて追い越しキャンセル
+concurrency:
+  group: trivy-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  scan-fs:
+    name: "依存パッケージ / IaC をスキャン"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10  # Trivy DB ダウンロードの遅延でハングするのを防ぐ
+    permissions:
+      contents: read
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: "インライン ignore コメントの禁止"
+        # Trivy にはインライン ignore を無効化するオプションがないため、トークンの存在自体を禁止する
+        # （抑制は承認必須の .trivyignore / .trivyignore.yaml に限定する）。
+        # トークンを分割して組み立てているのは、このファイル自身が検知されるのを防ぐため
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOKEN='trivy:''ignore'
+          if git grep -InF "${TOKEN}" -- .; then
+            echo "::error::インライン ignore コメント（${TOKEN}）は使用できません。.trivyignore / .trivyignore.yaml で抑制してください（変更にはセキュリティチームの承認が必要）"
+            exit 1
+          fi
+
+      - name: "Trivy fs スキャン"
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        env: &trivy-db-env
+          # 必須ワークフローがレジストリのレート制限で落ちないよう、公式配布先 3 箇所をフォールバック指定する
+          TRIVY_DB_REPOSITORY: mirror.gcr.io/aquasec/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2,public.ecr.aws/aquasecurity/trivy-db:2
+          TRIVY_JAVA_DB_REPOSITORY: mirror.gcr.io/aquasec/trivy-java-db:1,ghcr.io/aquasecurity/trivy-java-db:1,public.ecr.aws/aquasecurity/trivy-java-db:1
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: &trivy-scanners vuln,misconfig    # スキャンポリシー
+          severity: &trivy-severity HIGH,CRITICAL     # 検知するレベル
+          ignore-unfixed: &trivy-ignore-unfixed true  # 修正パッチがないものは除外 (vuln のみに作用)
+          exit-code: &trivy-exit-code 1
+          # GHAS なし (private repo で Code Scanning 不可) のため SARIF ではなく JSON で出力し、
+          # 次の step で table 表示と PR への annotation 生成を行う
+          format: json
+          output: trivy-fs.json
+
+      - name: "スキャン結果を log と annotation に表示"
+        # exit-code=1 で Trivy が落ちても結果は出す (CI の Details で即確認するため)
+        if: always() && hashFiles('trivy-fs.json') != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          trivy convert --format table --output trivy-fs.txt trivy-fs.json
+          cat trivy-fs.txt
+
+          # 検出箇所を PR に annotation 表示する。misconfig は行番号付き、
+          # vuln は行番号を持たないため Target（ロックファイル等）単位で出力する
+          jq -r '
+            .Results[]? | .Target as $t |
+            ((.Vulnerabilities // [])[]
+              | "::error file=\($t)::trivy (\(.VulnerabilityID)): \(.PkgName)@\(.InstalledVersion) — \(.Title // .VulnerabilityID)"),
+            ((.Misconfigurations // [])[]
+              | "::error file=\($t),line=\(.CauseMetadata.StartLine // 1)::trivy (\(.AVDID // .ID)): \(.Title)")
+          ' trivy-fs.json
+
+      - name: "スキャン結果を artifact に保存"
+        # log は retention に依存するため、後追い調査用に artifact でも残す
+        if: always() && hashFiles('trivy-fs.json') != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: trivy-fs
+          path: |
+            trivy-fs.txt
+            trivy-fs.json
+          retention-days: 30
+
+  detect:
+    name: "スキャン対象を決定"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      images: ${{ steps.detect.outputs.images }}
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: "マニフェスト or 自動検出でスキャン対象を決定"
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          manifest=""
+          for c in .github/trivy-image.yml .github/trivy-image.yaml; do
+            if [ -f "$c" ]; then manifest="$c"; break; fi
+          done
+
+          if [ -n "$manifest" ]; then
+            echo "マニフェスト ${manifest} に従ってスキャン対象を決定する"
+            # yq は ubuntu ランナー標準搭載。build-args は build-push-action の入力形式
+            # (改行区切りの KEY=VALUE) に変換する
+            images=$(
+              yq --output-format=json '.images // []' "$manifest" \
+              | jq --compact-output '
+                  map({
+                    dockerfile: (.dockerfile // ""),
+                    context: (.context // ((.dockerfile // "") | if contains("/") then (split("/")[:-1] | join("/")) else "." end)),
+                    target: (.target // ""),
+                    build_args: ((.["build-args"] // {}) | to_entries | map("\(.key)=\(.value)") | join("\n"))
+                  })
+                | map(. + {
+                    label: (.dockerfile + (if .target == "" then "" else " (\(.target))" end)),
+                    suffix: ((.dockerfile + (if .target == "" then "" else "-\(.target)" end)) | gsub("[/.]"; "-"))
+                  })'
+            )
+            # マニフェストの記載ミスは build を待たず detect で分かりやすく落とす
+            jq -e 'all(.[]; .dockerfile != "")' <<<"$images" >/dev/null \
+              || { echo "::error::${manifest} の images[].dockerfile は必須です"; exit 1; }
+            while IFS= read -r f; do
+              [ -f "$f" ] || { echo "::error::${manifest} に記載された ${f} が存在しません"; exit 1; }
+            done < <(jq --raw-output '.[].dockerfile' <<<"$images")
+          else
+            # buildx の per-Dockerfile ignore ファイル (Dockerfile.dockerignore) は誤検出するため除外する
+            images=$(
+              find . -path ./.git -prune -o -type f \
+                \( -name 'Dockerfile' -o -name 'Dockerfile.*' -o -name '*.Dockerfile' \) \
+                ! -name '*.dockerignore' -print \
+              | sed 's|^\./||' | sort | jq --raw-input . | jq --slurp --compact-output '
+                  map({
+                    dockerfile: .,
+                    context: (if contains("/") then (split("/")[:-1] | join("/")) else "." end),
+                    target: "",
+                    build_args: "",
+                    label: .,
+                    suffix: (gsub("[/.]"; "-"))
+                  })'
+            )
+          fi
+
+          echo "images=${images}" >> "$GITHUB_OUTPUT"
+          echo "スキャン対象: ${images}"
+
+  scan-image:
+    name: "イメージをスキャン (${{ matrix.label }})"
+    needs: detect
+    # 0 件で空 matrix を渡すと job がエラーになるためここで skip する。
+    # detect が success していれば run 全体の結論は success となり、ルールセットの必須チェックを満たす
+    if: needs.detect.outputs.images != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30  # docker build を含むため fs スキャンより長めに取る
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.detect.outputs.images) }}
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: "Buildx をセットアップ"
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
+
+      - name: "イメージをビルド"
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          # target / build-args はマニフェスト指定時のみ値を持つ（空なら build-push-action 側で無視される）
+          target: ${{ matrix.target }}
+          build-args: ${{ matrix.build_args }}
+          push: false
+          load: true  # スキャン用に docker daemon へ読み込む
+          tags: localbuild/trivy-scan:latest
+          provenance: false  # attestation 付き OCI image は load できないため無効化
+          # PR ごとの再ビルドを軽くする。GHA cache は対象 repo 単位のため repo 間で衝突せず、
+          # scope で同一 repo 内の Dockerfile / target 単位にも分離する
+          cache-from: type=gha,scope=trivy-image-${{ matrix.suffix }}
+          cache-to: type=gha,mode=max,scope=trivy-image-${{ matrix.suffix }}
+
+      - name: "Trivy image スキャン"
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        # 起動ポリシーは scan-fs 側のアンカー定義（&trivy-*）を参照する（単一定義）
+        env: *trivy-db-env
+        with:
+          scan-type: image
+          image-ref: localbuild/trivy-scan:latest
+          scanners: *trivy-scanners
+          severity: *trivy-severity
+          ignore-unfixed: *trivy-ignore-unfixed
+          exit-code: *trivy-exit-code
+          format: json
+          output: trivy-image.json
+
+      - name: "スキャン結果を log と annotation に表示"
+        # exit-code=1 で Trivy が落ちても結果は出す (CI の Details で即確認するため)
+        if: always() && hashFiles('trivy-image.json') != ''
+        shell: bash
+        env:
+          DOCKERFILE: ${{ matrix.dockerfile }}
+        run: |
+          set -euo pipefail
+          trivy convert --format table --output trivy-image.txt trivy-image.json
+          cat trivy-image.txt
+
+          # イメージ内の検出はリポジトリ上のファイル位置に対応しないため、
+          # ビルド元の Dockerfile に集約して PR に annotation 表示する
+          jq -r --arg df "${DOCKERFILE}" '
+            .Results[]? |
+            ((.Vulnerabilities // [])[]
+              | "::error file=\($df)::trivy (\(.VulnerabilityID)): \(.PkgName)@\(.InstalledVersion) — \(.Title // .VulnerabilityID)"),
+            ((.Misconfigurations // [])[]
+              | "::error file=\($df)::trivy (\(.AVDID // .ID)): \(.Title)")
+          ' trivy-image.json
+
+      - name: "スキャン結果を artifact に保存"
+        # log は retention に依存するため、後追い調査用に artifact でも残す
+        if: always() && hashFiles('trivy-image.json') != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: trivy-image-${{ matrix.suffix }}
+          path: |
+            trivy-image.txt
+            trivy-image.json
+          retention-days: 30

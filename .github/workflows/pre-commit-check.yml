@@ -1,0 +1,103 @@
+name: "🪝 pre-commit 設定チェック"
+
+# 各リポジトリに gitleaks hook 入りの .pre-commit-config.yaml が存在することを全 PR で確認する。
+# シークレット検知の前倒し（コミット前のローカル検知）用の設定は各リポジトリが自分で追加する
+# （中央からの配布・同期は行わない。未設定なら fail し、導入手順を PR コメントで案内する）。
+#
+# ⚠️ 必須ワークフローは on: のフィルタ（paths / branches / types 等）が無視され全 PR で起動されるが、
+#    本チェックは PR の差分ではなく head 時点のリポジトリ状態を確認するため、全 PR での起動が意図どおり。
+#    gitleaks hook を削除する PR も head 状態の検査で fail するため、設定の改変防止を兼ねる。
+#    チェック対象はリポジトリ直下の .pre-commit-config.yaml のみ（pre-commit の既定ファイル名）。
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_call:  # Free プラン運用の caller から呼ばれる（docs/SETUP/FREE.md）
+
+permissions:
+  contents: read       # contents API での .pre-commit-config.yaml 取得に必要
+  pull-requests: write # 導入手順の案内コメント投稿に必要
+
+# 同一 PR に連投された run のみ束ねて追い越しキャンセル
+concurrency:
+  group: pre-commit-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: "pre-commit 設定の存在チェック"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: ".pre-commit-config.yaml の gitleaks hook を確認"
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          MARKER="<!-- pre-commit-config-check -->"
+
+          # PR head 時点のファイルを checkout なしで取得。取得失敗・YAML 不正・空は未設定として fail に倒す
+          CONFIG=$(gh api "repos/${REPO}/contents/.pre-commit-config.yaml?ref=${HEAD_SHA}" --jq '.content' 2>/dev/null | base64 -d || true)
+
+          # rev は検査しない（pre-commit autoupdate / Renovate による更新を妨げない）
+          HOOKS=0
+          if [ -n "${CONFIG}" ]; then
+            HOOKS=$(yq eval '
+              [.repos[]?
+                | select(.repo == "https://github.com/gitleaks/gitleaks"
+                      or .repo == "https://github.com/gitleaks/gitleaks.git")
+                | .hooks[]?
+                | select(.id == "gitleaks" or .id == "gitleaks-docker" or .id == "gitleaks-system")]
+              | length' - <<< "${CONFIG}" 2>/dev/null) || HOOKS=0
+          fi
+          if [ "${HOOKS:-0}" -ge 1 ]; then
+            echo "gitleaks の pre-commit hook が設定済み"
+            exit 0
+          fi
+
+          # synchronize のたびに重複投稿しない
+          COMMENTS=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --paginate --jq '.[].body' || true)
+          if ! grep -qF "${MARKER}" <<< "${COMMENTS}"; then
+            BODY=$(cat <<'GUIDE'
+          ## 🪝 シークレットのコミット前検知（pre-commit + gitleaks）が未設定です
+
+          このリポジトリには gitleaks hook が設定された `.pre-commit-config.yaml` がありません。
+          シークレットの混入をリモートへ push される前（コミット時点）に検知するため、以下の手順で設定してください。
+          **設定されるまで、このチェックは全ての PR で fail します**（この PR に設定ファイルを追加すれば解消します）。
+
+          ### 1. リポジトリ直下に `.pre-commit-config.yaml` を追加（そのままコピペ可）
+
+          ```yaml
+          repos:
+            - repo: https://github.com/gitleaks/gitleaks
+              rev: v8.28.0
+              hooks:
+                - id: gitleaks
+                  # PR 時スキャン（gitleaks.yml）と同じ抑制ポリシー（インライン allow コメント無効）
+                  args: ["--ignore-gitleaks-allow"]
+          ```
+
+          ### 2. 各開発者のローカルで有効化
+
+          ```bash
+          brew install pre-commit   # macOS の場合（その他: pipx install pre-commit）
+          pre-commit install        # リポジトリ直下で実行。以後 git commit 時に自動で gitleaks が動く
+          ```
+
+          補足:
+          - gitleaks 本体のインストールは不要（pre-commit が `rev` のバージョンを自動導入する。Go も pre-commit 3.0 以降が自動ダウンロード。初回のみビルドに数分かかる）
+          - 独自 hook の追加は自由（gitleaks の hook が残っていればこのチェックは成功する）
+          - `rev` は `pre-commit autoupdate` や Renovate（pre-commit manager は要有効化）で更新してよい
+          - ローカル hook は任意運用のため、強制レイヤーとして PR 時の Gitleaks スキャンは引き続き実行される
+          GUIDE
+            )
+            gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" \
+              -f body="${MARKER}"$'\n'"${BODY}" \
+              || echo "::warning::案内コメントの投稿に失敗（fork からの PR では GITHUB_TOKEN が read-only）"
+          fi
+
+          echo "::error::.pre-commit-config.yaml に gitleaks の pre-commit hook が設定されていません。PR コメントの手順に従って追加してください"
+          exit 1

@@ -1,0 +1,62 @@
+name: "🛡️ Gitleaks"
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_call:  # Free プラン運用の caller から呼ばれる（docs/SETUP/FREE.md）
+
+permissions:
+  contents: read
+
+# 同一 PR に連投された run のみ束ねて追い越しキャンセル
+concurrency:
+  group: gitleaks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: "シークレット検知"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: "Install Gitleaks"
+        shell: bash
+        env:
+          VERSION: 8.28.0
+          # gitleaks_{version}_linux_x64.tar.gz の SHA256（公式 checksums から確定）
+          SHA256: a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb
+        run: |
+          set -euo pipefail
+          ARCHIVE="gitleaks_${VERSION}_linux_x64.tar.gz"
+          curl -sSfL -o "$ARCHIVE" "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/${ARCHIVE}"
+
+          # SHA-256 検証（改ざん・破損を検知）
+          echo "${SHA256}  ${ARCHIVE}" | sha256sum -c -
+
+          sudo tar -xz -C /usr/local/bin -f "$ARCHIVE" gitleaks
+          rm -f "$ARCHIVE"
+          gitleaks version
+
+      - name: "Gitleaks スキャン"
+        shell: bash
+        env:
+          # PR の base..head 差分のみスキャン
+          LOG_OPTS: ${{ format('{0}..{1}', github.event.pull_request.base.sha, github.event.pull_request.head.sha) }}
+        run: |
+          set -euo pipefail
+          # --ignore-gitleaks-allow: インライン allow コメントを無効化（抑制は承認必須の .gitleaksignore に限定する）
+          rc=0
+          gitleaks git . --redact --verbose --exit-code 1 --ignore-gitleaks-allow --log-opts="${LOG_OPTS}" \
+            --report-format json --report-path gitleaks-report.json || rc=$?
+
+          # 検出箇所を PR に annotation 表示する（シークレット本体・マッチ文字列は含めない）
+          if [ -s gitleaks-report.json ]; then
+            jq -r '.[] | "::error file=\(.File),line=\(.StartLine)::gitleaks (\(.RuleID)): \(.Description) — commit \(.Commit[0:8]) にシークレットの可能性"' gitleaks-report.json
+          fi
+          exit "${rc}"

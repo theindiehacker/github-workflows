@@ -1,0 +1,88 @@
+name: "🧹 actionlint"
+
+# GitHub Actions のワークフロー定義を actionlint で構文チェックする。
+#
+# ⚠️ 必須ワークフローは on: のフィルタ（paths / branches / types 等）が無視され全 PR で起動されるため、
+#    「ワークフローファイルが変更されたか」の判定は本ワークフロー内で行う。
+#    対象ファイルの変更がない PR では lint を skip し、run 全体は success になる
+#    （ルールセットが All repositories 適用のため、対象外の PR でも合格できる必要がある）。
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_call:  # Free プラン運用の caller から呼ばれる（docs/SETUP/FREE.md）
+
+permissions:
+  contents: read
+  pull-requests: read  # paths-filter の変更ファイル一覧取得に必要
+
+# 同一 PR に連投された run のみ束ねて追い越しキャンセル
+concurrency:
+  group: actionlint-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: "workflow 構文チェック"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: "lint 対象を判定"
+        id: filter
+        uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706  # v4.0.2
+        with:
+          list-files: json
+          # 削除ファイルは lint できないため対象外（rename は added + deleted に分解され新パス側が対象になる）
+          filters: |
+            config:
+              - added|modified|copied: ".github/actionlint.yml"
+              - added|modified|copied: ".github/actionlint.yaml"
+            workflows:
+              - added|modified|copied: ".github/workflows/*.yml"
+              - added|modified|copied: ".github/workflows/*.yaml"
+
+      - name: "Checkout"
+        if: steps.filter.outputs.config == 'true' || steps.filter.outputs.workflows == 'true'
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: "Install actionlint"
+        if: steps.filter.outputs.config == 'true' || steps.filter.outputs.workflows == 'true'
+        shell: bash
+        env:
+          VERSION: 1.7.12
+          # actionlint_{version}_linux_amd64.tar.gz の SHA256（公式 checksums から確定）
+          SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          set -euo pipefail
+          ARCHIVE="actionlint_${VERSION}_linux_amd64.tar.gz"
+          curl -sSfL -o "$ARCHIVE" "https://github.com/rhysd/actionlint/releases/download/v${VERSION}/${ARCHIVE}"
+
+          # SHA-256 検証（改ざん・破損を検知）
+          echo "${SHA256}  ${ARCHIVE}" | sha256sum -c -
+
+          sudo tar -xz -C /usr/local/bin -f "$ARCHIVE" actionlint
+          rm -f "$ARCHIVE"
+          actionlint --version
+
+      - name: "actionlint"
+        if: steps.filter.outputs.config == 'true' || steps.filter.outputs.workflows == 'true'
+        shell: bash
+        env:
+          # 設定ファイルは全ファイルの検出結果に影響するため、変更時は全ワークフローを lint
+          SCAN_ALL: ${{ steps.filter.outputs.config }}
+          TARGETS: ${{ steps.filter.outputs.workflows_files }}
+        run: |
+          set -euo pipefail
+          # workflow command 形式で出力し、検出箇所を PR に annotation 表示する
+          FORMAT=$'{{range $err := .}}::error file={{$err.Filepath}},line={{$err.Line}},col={{$err.Column}}::{{$err.Message}}\n{{end}}'
+          if [ "${SCAN_ALL}" = "true" ]; then
+            actionlint -format "${FORMAT}"
+            exit 0
+          fi
+
+          targets=()
+          while IFS= read -r t; do
+            if [ -n "${t}" ]; then targets+=("${t}"); fi
+          done < <(jq -r '.[]' <<< "${TARGETS}")
+          actionlint -format "${FORMAT}" "${targets[@]}"
