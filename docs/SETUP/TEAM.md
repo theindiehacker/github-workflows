@@ -271,7 +271,7 @@ File patterns:
 
 <details><summary><b>「✏️ スタイルチェック」</b></summary>
 
-> ワークフロー定義の構文チェック(actionlint)を必須化するルール。セキュリティ検知(2.3〜2.6)とは性質が異なるため別ルールセットで管理する
+> ワークフロー定義の構文チェック(actionlint)と Terraform の lint(tflint)を必須化するルール。セキュリティ検知(2.3〜2.6)とは性質が異なるため別ルールセットで管理する
 
 | 設定項目 | 値                        |
 |:-------:|:-------------------------|
@@ -293,8 +293,10 @@ Rules セクションで以下のチェックを外す:
 | Repository | Branch | Workflow |
 |:-----------|:-------|:---------|
 | `github-workflows` | `main` | `.github/workflows/actionlint.yml` |
+| `github-workflows` | `main` | `.github/workflows/tflint.yml` |
 
-※ `actionlint` は必須ワークフローのため全 PR で起動されるが、ワークフロー関連ファイル(`.github/workflows/` と `.github/actionlint.yml`)に変更がない PR ではワークフロー内の判定で lint を skip し success になる。
+※ `actionlint` は必須ワークフローのため全 PR で起動されるが、ワークフロー関連ファイル(`.github/workflows/` と `.github/actionlint.yml`)に変更がない PR ではワークフロー内の判定で lint を skip し success になる。<br/>
+※ `tflint` も同様に全 PR で起動されるが、Terraform 関連ファイル(`*.tf` / `*.tfvars` / `.tflint.hcl` 等)に変更がない PR では lint を skip し success になる(Terraform 未使用のリポジトリでも合格する)。設定は「実行ディレクトリ自身の `.tflint.hcl` > リポジトリ直下の `.tflint.hcl`」の優先で適用され、どちらも無ければ組み込み terraform ruleset の recommended プリセットで lint される。
 
 </details>
 
