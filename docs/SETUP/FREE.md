@@ -40,11 +40,6 @@ jobs:
     permissions:
       contents: read
     uses: <org>/github-workflows/.github/workflows/gitleaks.yml@main
-  pre-commit-check:
-    permissions:
-      contents: read
-      pull-requests: write
-    uses: <org>/github-workflows/.github/workflows/pre-commit-check.yml@main
   trivy:
     permissions:
       contents: read
@@ -76,7 +71,6 @@ jobs:
 ```
 
 - 呼び出し先は `@main` 参照のままにする（SHA 固定にすると中央の検知強化・修正に追従しなくなる）
-- コミット前検知(pre-commit)を運用しない場合は `pre-commit-check` の job を削除する
 - Terraform を使わないリポジトリでも `tflint` の job は削除しない（Terraform 関連ファイルに変更がなければ skip され success になる）
 
 ### 2.3 zizmor / ghalint の許可設定を配置
@@ -104,8 +98,6 @@ excludes:
   - policy_name: action_ref_should_be_full_length_commit_sha
     action_name: <org>/github-workflows/.github/workflows/gitleaks.yml
   - policy_name: action_ref_should_be_full_length_commit_sha
-    action_name: <org>/github-workflows/.github/workflows/pre-commit-check.yml
-  - policy_name: action_ref_should_be_full_length_commit_sha
     action_name: <org>/github-workflows/.github/workflows/trivy.yml
   - policy_name: action_ref_should_be_full_length_commit_sha
     action_name: <org>/github-workflows/.github/workflows/semgrep.yml
@@ -121,25 +113,18 @@ excludes:
 
 ※ `action_name` はサブパス込みの完全一致のため、リポジトリ名だけの指定（`<org>/github-workflows`）では効かない
 
-### 2.4 pre-commit（commit 前のローカル検知）を配置
+### 2.4 監査ワークフローを有効化（読み取り専用 GitHub App）
 
-各リポジトリ直下に gitleaks hook 入りの `.pre-commit-config.yaml` を置く
-（本リポジトリ直下が実例。caller に `pre-commit-check` job があれば、未設定リポジトリの PR にコピペ用の導入手順がコメントされる）。
+2.2〜2.3 のファイルの配置はサーバー側で強制できないため、org の全リポジトリを毎日 09:00 (JST) に走査する監査ワークフローを本リポジトリに配置する。欠落・改変を検知すると本リポジトリに issue（`security-audit` ラベル）を起票する（解消されると次回実行時に自動 close）。
 
-PR 時の Gitleaks は検知した時点で履歴に残っているため、シークレット・機密ファイルをリモートの履歴に入れないための防止レイヤーはこの pre-commit が唯一。既存リポジトリへの導入時は TEAM.md の 2.3 と同様に全履歴スキャンも実施する。
-
-### 2.5 監査ワークフローを有効化（読み取り専用 GitHub App）
-
-2.2〜2.4 のファイルの配置はサーバー側で強制できないため、org の全リポジトリを毎日 09:00 (JST) に走査する監査ワークフローを本リポジトリに配置する。欠落・改変を検知すると本リポジトリに issue（`security-audit` ラベル）を起票する（解消されると次回実行時に自動 close）。
-
-#### 2.5.1 監査ワークフローを配置
+#### 2.4.1 監査ワークフローを配置
 
 本リポジトリに `.github/workflows/security-audit.yml` を追加する（そのままコピペ可。org 名・リポジトリ名は実行時に解決されるため置換不要）:
 
 ```yaml
 name: "🔍 Security audit"
 
-# サーバー側で配置を強制できない caller・許可設定（docs/SETUP/FREE.md 2.2〜2.4 のファイル）の欠落・改変を、
+# サーバー側で配置を強制できない caller・許可設定（docs/SETUP/FREE.md 2.2〜2.3 のファイル）の欠落・改変を、
 # 読み取り専用の GitHub App トークンで日次走査して検知し、本リポジトリに issue を起票する。
 # App 未設定（AUDIT_APP_CLIENT_ID が空）の間は job ごと skip される。
 on:
@@ -220,10 +205,8 @@ jobs:
                   problems+=("caller が \`${wf}.yml@main\` を呼び出していない")
                 fi
               done
-              has_precommit_job=$(grep -c "pre-commit-check\.yml@main" "${target}" || true)
             else
               problems+=("caller（\`.github/workflows/security.yml\`）がない")
-              has_precommit_job=0
             fi
 
             # 許可設定（2.3）: zizmor は .github/zizmor.yml に固定、ghalint は自動探索パスを順に確認
@@ -248,17 +231,6 @@ jobs:
               fi
             else
               problems+=("\`ghalint.yml\` がない")
-            fi
-
-            # pre-commit（2.4）: caller に pre-commit-check job がある場合のみ確認
-            if [ "${has_precommit_job}" -gt 0 ]; then
-              if fetch "${repo}" ".pre-commit-config.yaml" "${target}"; then
-                if ! grep -q "gitleaks" "${target}"; then
-                  problems+=("\`.pre-commit-config.yaml\` に gitleaks hook がない")
-                fi
-              else
-                problems+=("caller に pre-commit-check job があるが \`.pre-commit-config.yaml\` がない")
-              fi
             fi
 
             if [ "${#problems[@]}" -gt 0 ]; then
@@ -301,7 +273,7 @@ jobs:
             body="${RUNNER_TEMP}/body.md"
             {
               echo "日次監査（[実行ログ](${run_url})）で、対象 ${TOTAL} リポジトリ中 ${FLAGGED} リポジトリに検知ワークフロー関連ファイルの欠落・改変が見つかりました。"
-              echo "各ファイルの配置内容は [docs/SETUP/FREE.md](${doc_url}) の 2.2〜2.4 を参照してください。"
+              echo "各ファイルの配置内容は [docs/SETUP/FREE.md](${doc_url}) の 2.2〜2.3 を参照してください。"
               echo
               cat "${RUNNER_TEMP}/report.md"
             } > "${body}"
@@ -340,7 +312,7 @@ excludes:
     step_id: app-token
 ```
 
-#### 2.5.2 読み取り専用 GitHub App を作成
+#### 2.4.2 読み取り専用 GitHub App を作成
 
 走査には org 全リポジトリを読めるトークンが必要なため、読み取り専用の GitHub App を作成する:
 
@@ -356,9 +328,9 @@ excludes:
    - **Secrets**: `AUDIT_APP_PRIVATE_KEY` = 2. の .pem の中身
 5. Actions タブ → 「🔍 Security audit」 → **Run workflow** で手動実行し、動作を確認
 
-- `AUDIT_APP_CLIENT_ID` が未設定の間、ワークフローは skip される（2.5.1 の配置が先行しても fail しない）
+- `AUDIT_APP_CLIENT_ID` が未設定の間、ワークフローは skip される（2.4.1 の配置が先行しても fail しない）
 - App に書き込み権限は付与しない（鍵漏洩時の影響を読み取りに限定する。配置・修復は人が PR で行う）
-- 監査内容: caller の存在と 7 ワークフローの `@main` 呼び出し・`pull_request` トリガー、`.github/zizmor.yml` / `ghalint.yml` の存在と必須設定、caller に pre-commit-check job がある場合は `.pre-commit-config.yaml`
+- 監査内容: caller の存在と 7 ワークフローの `@main` 呼び出し・`pull_request` トリガー、`.github/zizmor.yml` / `ghalint.yml` の存在と必須設定
 
 ---
 ## 3. 📏 運用ルールを明文化して周知
@@ -370,9 +342,11 @@ excludes:
 - 「🛡️ Security checks」が fail した PR はマージしない
 - 抑制設定（`.gitleaksignore` / `.trivyignore` / `.semgrepignore` / `.github/zizmor.yml` / `ghalint.yml` など）を変更する PR はセキュリティチームを手動でレビュアーに指定し、レビューを受ける
 - 本リポジトリの `.github/workflows/` と各リポジトリの caller（`security.yml`）を変更する PR も同様にセキュリティチームのレビューを受ける
+- コミット前のローカル検知（pre-commit / lefthook / mise + gitleaks など）を各リポジトリで導入する（ツールは任意。本リポジトリ直下の `.pre-commit-config.yaml` が実例。新規リポジトリへの初期設定はテンプレートリポジトリで配布する）
+- 既存リポジトリを本構成に乗せる際は、TEAM.md の「🔑 シークレットの混入検知」と同様に全履歴スキャンを一度実施する
 
-> caller（`security.yml`）や許可設定（2.3）の削除・改変はマージ時には止まらないが、日次監査（2.5）が検知して issue を起票する。
-> リポジトリ新設時の配置漏れ（2.2〜2.4）も同様に検知される。
+> caller（`security.yml`）や許可設定（2.3）の削除・改変はマージ時には止まらないが、日次監査（2.4）が検知して issue を起票する。
+> リポジトリ新設時の配置漏れ（2.2〜2.3）も同様に検知される。
 
 ### （推奨）public リポジトリにはルールセットを設定する
 
@@ -386,4 +360,4 @@ public リポジトリはリポジトリ単位のルールセットが有効な�
 1. TEAM.md の「2.」のルールセットを設定する
 2. TEAM.md の「1.」の `All-repository write` ロールを追加でアサインする
 3. 各リポジトリから caller（`security.yml`）と許可設定（`.github/zizmor.yml` の `<org>/github-workflows/*` 行・`ghalint.yml` の excludes）を削除する（caller が残っていると必須ワークフローと二重実行になり Actions 利用時間を消費する）
-4. 監査用の GitHub App（2.5）をアンインストール・削除し、本リポジトリから 2.5.1 で配置した監査ワークフロー一式（`security-audit.yml`・`.github/zizmor.yml` の `github-app` ignore・`ghalint.yml` の excludes）と `AUDIT_APP_CLIENT_ID` / `AUDIT_APP_PRIVATE_KEY` を削除する
+4. 監査用の GitHub App（2.4）をアンインストール・削除し、本リポジトリから 2.4.1 で配置した監査ワークフロー一式（`security-audit.yml`・`.github/zizmor.yml` の `github-app` ignore・`ghalint.yml` の excludes）と `AUDIT_APP_CLIENT_ID` / `AUDIT_APP_PRIVATE_KEY` を削除する

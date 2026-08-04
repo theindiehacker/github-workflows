@@ -6,7 +6,6 @@ Organization 共通のルールセット/CI/セキュリティワークフロー
 graph TD;
     subgraph gw ["🔒 github-workflows"]
         Gitleaks["🔑 Gitleaks<br/>シークレット情報混入検知"]
-        PreCommit["🪝 pre-commit<br/>コミット前検知設定のチェック"]
         Trivy["🛡️ Trivy<br/>設定ミス / 脆弱性の検知"]
         Zizmor["🔎 zizmor<br/>GitHub Actions の静的解析"]
         Semgrep["🔬 Semgrep<br/>アプリコードの SAST"]
@@ -52,16 +51,15 @@ sequenceDiagram
     end
 
     Engineer->>Engineer: git commit
-    Note over Engineer: pre-commit（gitleaks）<br/>🔑 コミット前にローカルでシークレット検知
+    Note over Engineer: 🔑 コミット前のローカル検知（任意）<br/>pre-commit / lefthook / mise など手段はリポジトリごと
 
     Engineer->>main: ❌ push
     Note over Engineer,main: 🚫 main ブランチへの直 push を禁止
 
     Engineer->>PR: push
 
-    PR->>+workflows: ワークフロー起動（🛡️ gitleaks.yml / 🪝 pre-commit-check.yml）
+    PR->>+workflows: ワークフロー起動（🛡️ gitleaks.yml）
     workflows->>workflows: 🔑 シークレットの混入検知
-    workflows->>workflows: 🪝 pre-commit 設定の存在チェック
     workflows->>-PR: ✅ / ❌
 
     alt ✅ success
