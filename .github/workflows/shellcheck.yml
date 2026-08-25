@@ -1,0 +1,70 @@
+name: "🐚 shellcheck"
+
+# シェルスクリプトを shellcheck で lint する。
+#
+# ⚠️ 必須ワークフローは on: のフィルタ（paths / branches / types 等）が無視され全 PR で起動されるため、
+#    「シェルスクリプトが変更されたか」の判定は本ワークフロー内で行う。
+#    対象ファイルの変更がない PR では lint を skip し、run 全体は success になる
+#    （ルールセットが All repositories 適用のため、対象外の PR でも合格できる必要がある）。
+#
+# ⚠️ github-pr-review は PR への書き込み権限を要求するため、GITHUB_TOKEN が read-only に降格される
+#    fork からの PR では fail する（fork PR を受け付けるリポジトリでは本ワークフローを必須にしない）。
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_call:  # Free プラン運用の caller から呼ばれる（docs/SETUP/FREE.md）
+
+permissions: {}
+
+# 同一 PR に連投された run のみ束ねて追い越しキャンセル
+concurrency:
+  group: shellcheck-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: "シェルスクリプトを lint"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write  # reviewdog のレビューコメント投稿に必要
+    steps:
+      - name: "lint 対象を判定"
+        id: filter
+        uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706  # v4.0.2
+        with:
+          # 削除ファイルは lint できないため対象外（rename は added + deleted に分解され新パス側が対象になる）
+          filters: |
+            scripts:
+              - added|modified|copied: "**/*.sh"
+              - added|modified|copied: "**/*.bash"
+              - added|modified|copied: "**/*.ksh"
+
+      - name: "Checkout"
+        if: steps.filter.outputs.scripts == 'true'
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: "shellcheck"
+        if: steps.filter.outputs.scripts == 'true'
+        uses: reviewdog/action-shellcheck@0722bbdb0d47f04c1b53b8734d2422ac63a45ec6  # v1.32.1
+        with:
+          github_token: ${{ github.token }}
+          reporter: github-pr-review
+          level: warning
+          fail_level: warning
+          filter_mode: added
+          # 指定すると既定値ごと置き換わるため --external-sources を併記する
+          shellcheck_flags: "--severity=warning --external-sources"
+          pattern: |
+            *.sh
+            *.bash
+            *.ksh
+          check_all_files_with_shebangs: "true"
+          exclude: |
+            */.git/*
+            */node_modules/*
+            */vendor/*
+            */.terraform/*
