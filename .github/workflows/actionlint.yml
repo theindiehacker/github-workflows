@@ -30,24 +30,21 @@ jobs:
         id: filter
         uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706  # v4.0.2
         with:
-          list-files: json
-          # 削除ファイルは lint できないため対象外（rename は added + deleted に分解され新パス側が対象になる）
           filters: |
-            config:
-              - added|modified|copied: ".github/actionlint.yml"
-              - added|modified|copied: ".github/actionlint.yaml"
             workflows:
-              - added|modified|copied: ".github/workflows/*.yml"
-              - added|modified|copied: ".github/workflows/*.yaml"
+              - ".github/workflows/*.yml"
+              - ".github/workflows/*.yaml"
+              - ".github/actionlint.yml"
+              - ".github/actionlint.yaml"
 
       - name: "Checkout"
-        if: steps.filter.outputs.config == 'true' || steps.filter.outputs.workflows == 'true'
+        if: steps.filter.outputs.workflows == 'true'
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
 
       - name: "Install actionlint"
-        if: steps.filter.outputs.config == 'true' || steps.filter.outputs.workflows == 'true'
+        if: steps.filter.outputs.workflows == 'true'
         shell: bash
         env:
           VERSION: 1.7.12
@@ -66,23 +63,9 @@ jobs:
           actionlint --version
 
       - name: "actionlint"
-        if: steps.filter.outputs.config == 'true' || steps.filter.outputs.workflows == 'true'
+        if: steps.filter.outputs.workflows == 'true'
         shell: bash
-        env:
-          # 設定ファイルは全ファイルの検出結果に影響するため、変更時は全ワークフローを lint
-          SCAN_ALL: ${{ steps.filter.outputs.config }}
-          TARGETS: ${{ steps.filter.outputs.workflows_files }}
         run: |
           set -euo pipefail
           # workflow command 形式で出力し、検出箇所を PR に annotation 表示する
-          FORMAT=$'{{range $err := .}}::error file={{$err.Filepath}},line={{$err.Line}},col={{$err.Column}}::{{$err.Message}}\n{{end}}'
-          if [ "${SCAN_ALL}" = "true" ]; then
-            actionlint -format "${FORMAT}"
-            exit 0
-          fi
-
-          targets=()
-          while IFS= read -r t; do
-            if [ -n "${t}" ]; then targets+=("${t}"); fi
-          done < <(jq -r '.[]' <<< "${TARGETS}")
-          actionlint -format "${FORMAT}" "${targets[@]}"
+          actionlint -format $'{{range $err := .}}::error file={{$err.Filepath}},line={{$err.Line}},col={{$err.Column}}::{{$err.Message}}\n{{end}}'
