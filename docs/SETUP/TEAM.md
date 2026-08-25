@@ -292,8 +292,7 @@ Rules セクションで以下のチェックを外す:
 
 ※ `actionlint` は必須ワークフローのため全 PR で起動されるが、ワークフロー関連ファイル(`.github/workflows/` と `.github/actionlint.yml`)に変更がない PR ではワークフロー内の判定で lint を skip し success になる。<br/>
 ※ `tflint` も同様に全 PR で起動されるが、Terraform 関連ファイル(`*.tf` / `*.tfvars` / `.tflint.hcl` 等)に変更がない PR では lint を skip し success になる(Terraform 未使用のリポジトリでも合格する)。設定は「実行ディレクトリ自身の `.tflint.hcl` > リポジトリ直下の `.tflint.hcl`」の優先で適用され、どちらも無ければ組み込み terraform ruleset の recommended プリセットで lint される。<br/>
-※ `shellcheck` も同様に全 PR で起動されるが、シェルスクリプト(`*.sh` / `*.bash` / `*.ksh`)に変更がない PR では lint を skip し success になる。指摘は reviewdog が PR のレビューコメントとして投稿し、対象は PR の変更行かつ severity `warning` 以上に限定されるため、既存スクリプトの未修正分でマージがブロックされることはない。抑制設定はリポジトリ直下の `.shellcheckrc` で行う。<br/>
-※ `shellcheck` はレビューコメントの投稿に `pull-requests: write` を使うため、fork からの PR(`GITHUB_TOKEN` が read-only に降格される)では fail する。fork を禁止している private リポジトリ(「0.」)では影響しないが、fork PR を受け付ける public リポジトリがある場合は Target repositories をそのリポジトリ以外に限定する。
+※ `shellcheck` も同様に全 PR で起動されるが、シェルスクリプト(`*.sh` / `*.bash` / `*.ksh`)に変更がない PR では lint を skip し success になる。lint 対象は変更されたスクリプトのみで、検出は severity `warning` 以上(error / warning)に限定される。拡張子で判定するため、拡張子のないスクリプトは対象外。抑制設定はリポジトリ直下の `.shellcheckrc` で行う。
 
 </details>
 
@@ -357,13 +356,10 @@ aquasecurity/trivy-action@*,
 docker/setup-buildx-action@*,
 docker/build-push-action@*,
 dorny/paths-filter@*,
-renovatebot/github-action@*,
-reviewdog/action-shellcheck@*,
-reviewdog/action-setup@*
+renovatebot/github-action@*
 ```
 
 ※ 各リポジトリが新しい外部 action を使う場合はこのリストへの追加が必要(SHA ピン留めは各ワークフロー側で行う)。<br/>
-※ `reviewdog/action-setup` は `reviewdog/action-shellcheck` が内部で呼び出す composite action のため、併せて許可する必要がある。<br/>
 ※ `actions/create-github-app-token` は「Allow actions created by GitHub」で許可済みのため個別登録は不要。
 
 </details>

@@ -71,14 +71,13 @@ jobs:
   shellcheck:
     permissions:
       contents: read
-      pull-requests: write
+      pull-requests: read
     uses: <org>/github-workflows/.github/workflows/shellcheck.yml@main
 ```
 
 - 呼び出し先は `@main` 参照のままにする（SHA 固定にすると中央の検知強化・修正に追従しなくなる）
 - Terraform を使わないリポジトリでも `tflint` の job は削除しない（Terraform 関連ファイルに変更がなければ skip され success になる）
 - シェルスクリプトを持たないリポジトリでも `shellcheck` の job は削除しない（対象ファイルに変更がなければ skip され success になる）
-- `shellcheck` は reviewdog が PR にレビューコメントを投稿するため `pull-requests: write` が必要。fork からの PR では `GITHUB_TOKEN` が read-only に降格されて fail するため、fork PR を受け付けるリポジトリでは `shellcheck` の job を外す（外した場合は 2.4 の監査で指摘されるため、監査ワークフローの対象からも外す）
 
 ### 2.3 zizmor / ghalint の許可設定を配置
 
