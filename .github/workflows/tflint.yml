@@ -7,8 +7,8 @@ name: "🏗️ tflint"
 #    対象ファイルの変更がない PR では lint を skip し、run 全体は success になる
 #    （ルールセットが All repositories 適用のため、Terraform 未使用の repo でも合格できる必要がある）。
 #
-# 設定ファイル（.tflint.hcl）は「実行ディレクトリ自身のもの > リポジトリ直下のもの」の優先で適用する
-# （tflint は --chdir 先でリポジトリ直下の設定を自動では読まないため、直下の設定は --config で明示する）。
+# 設定ファイル（.tflint.hcl）は実行ディレクトリから repo ルートへ遡り、最初に見つかったものを適用する
+# （tflint が自動で読むのは --chdir 先のものだけなので、それ以外は --config で明示する）。
 # どちらも無ければ組み込み terraform ruleset の recommended プリセットで lint される。
 # plugin（provider ruleset 等）は .tflint.hcl で宣言すれば実行前の tflint --init で導入される。
 on:
@@ -106,10 +106,21 @@ jobs:
             if [ -z "${dir}" ]; then continue; fi
             echo "::group::${dir}"
 
+            # 設定は実行ディレクトリから repo ルートへ遡って最初に見つかったものを使う。
+            # tflint が自動で読むのは --chdir 先の .tflint.hcl だけで、terraform/.tflint.hcl のように
+            # 中間ディレクトリへ置いた設定は明示しないと無視され、そこで宣言した plugin
+            # （provider ruleset）のルールが 1 つも効かないまま success になってしまう
             args=()
-            if [ "${dir}" != "." ] && [ ! -f "${dir}/.tflint.hcl" ] && [ -f .tflint.hcl ]; then
-              args=(--config="${PWD}/.tflint.hcl")
-            fi
+            probe="${dir}"
+            while :; do
+              if [ -f "${probe}/.tflint.hcl" ]; then
+                # 実行ディレクトリ自身のものは tflint が自動で読むため --config は付けない
+                if [ "${probe}" != "${dir}" ]; then args=(--config="${PWD}/${probe}/.tflint.hcl"); fi
+                break
+              fi
+              if [ "${probe}" = "." ]; then break; fi
+              probe=$(dirname "${probe}")
+            done
 
             tflint --chdir="${dir}" "${args[@]}" --init
             result="${RUNNER_TEMP}/tflint.json"

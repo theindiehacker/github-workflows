@@ -3,8 +3,9 @@ name: "🛡️ Trivy スキャン"
 # main への直 push はルールセットの pull_request ルールで禁止されるため、push トリガーは持たない（PR のみで検知できる）。
 #
 # fs / image の 2 種のスキャンを 1 ワークフローの別ジョブとして定義する。共通の起動ポリシー
-# （scanners / severity / ignore-unfixed / exit-code / DB フォールバック）は scan-fs 側で
+# （scanners / ignore-unfixed / exit-code / DB フォールバック）は scan-fs 側で
 # YAML アンカー（&trivy-*）として単一定義し、scan-image はエイリアスで参照する。
+# severity だけは対象 repo の trivy.yaml を読んで組み立てるため detect job の output で配る。
 #
 # Required workflow は対象 repo から inputs を受け取れないため、image スキャンは規約ベースで動作する:
 #   - 対象 repo にビルドマニフェスト（.github/trivy-image.yml）があればそれに従い、
@@ -39,6 +40,7 @@ concurrency:
 jobs:
   scan-fs:
     name: "依存パッケージ / IaC をスキャン"
+    needs: detect  # severity を repo の trivy.yaml で厳しくできるようにするため
     runs-on: ubuntu-latest
     timeout-minutes: 10  # Trivy DB ダウンロードの遅延でハングするのを防ぐ
     permissions:
@@ -72,7 +74,7 @@ jobs:
           scan-type: fs
           scan-ref: .
           scanners: &trivy-scanners vuln,misconfig    # スキャンポリシー
-          severity: &trivy-severity HIGH,CRITICAL     # 検知するレベル
+          severity: ${{ needs.detect.outputs.severity }}  # 検知するレベル（下限 HIGH,CRITICAL。detect job 参照）
           ignore-unfixed: &trivy-ignore-unfixed true  # 修正パッチがないものは除外 (vuln のみに作用)
           exit-code: &trivy-exit-code 1
           # GHAS なし (private repo で Code Scanning 不可) のため SARIF ではなく JSON で出力し、
@@ -111,18 +113,59 @@ jobs:
           retention-days: 30
 
   detect:
-    name: "スキャン対象を決定"
+    name: "スキャン対象・ポリシーを決定"
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
     outputs:
       images: ${{ steps.detect.outputs.images }}
+      severity: ${{ steps.policy.outputs.severity }}
     steps:
       - name: "Checkout"
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+
+      - name: "検知する severity を決定"
+        id: policy
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # 組織の下限。repo 直下の trivy.yaml の severity では「検知を増やす」方向にのみ上書きできる
+          # （trivy は CLI フラグを設定ファイルより優先するため、ここで組み立てた値が常に勝つ。
+          #   scanners / exit-code / ignore-unfixed は下限そのもののため repo 設定では動かせない）
+          levels=(CRITICAL HIGH)
+
+          cfg=""
+          for c in trivy.yaml trivy.yml; do
+            if [ -f "$c" ]; then cfg="$c"; break; fi
+          done
+
+          if [ -n "${cfg}" ]; then
+            # プロセス置換の中で落ちても set -e は拾わない（yq が無い環境で repo の指定が
+            # 黙って捨てられ、検知が下限まで弱まる）ため、先に変数へ受けて失敗を表に出す
+            parsed=$(
+              yq --output-format=json '.severity // []' "${cfg}" \
+                | jq -r 'if type == "array" then .[] else . end' \
+                | tr ',' '\n' | tr -d ' ' | tr '[:lower:]' '[:upper:]'
+            )
+            while IFS= read -r level; do
+              case "${level}" in
+                "") ;;
+                UNKNOWN|LOW|MEDIUM|HIGH|CRITICAL) levels+=("${level}") ;;
+                *)
+                  echo "::error file=${cfg}::severity に不正な値があります: ${level}"
+                  exit 1
+                  ;;
+              esac
+            done <<< "${parsed}"
+          fi
+
+          severity=$(printf '%s\n' "${levels[@]}" | sort -u | paste -sd, -)
+          echo "severity=${severity}" >> "$GITHUB_OUTPUT"
+          echo "検知する severity: ${severity}"
 
       - name: "マニフェスト or 自動検出でスキャン対象を決定"
         id: detect
@@ -228,7 +271,7 @@ jobs:
           scan-type: image
           image-ref: localbuild/trivy-scan:latest
           scanners: *trivy-scanners
-          severity: *trivy-severity
+          severity: ${{ needs.detect.outputs.severity }}
           ignore-unfixed: *trivy-ignore-unfixed
           exit-code: *trivy-exit-code
           format: json

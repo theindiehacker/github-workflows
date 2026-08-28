@@ -1,0 +1,112 @@
+name: "🏗️ terraform fmt"
+
+# Terraform の定義ファイルの書式を terraform fmt で検査する。
+#
+# ⚠️ 必須ワークフローは on: のフィルタ（paths / branches / types 等）が無視され全 PR で起動されるため、
+#    「Terraform 関連ファイルが変更されたか」の判定は本ワークフロー内で行う。
+#    対象ファイルの変更がない PR では検査を skip し、run 全体は success になる
+#    （ルールセットが All repositories 適用のため、Terraform 未使用の repo でも合格できる必要がある）。
+#
+# terraform validate / terraform test は本ワークフローに含めず、必要な repo が自前のワークフローで実行する。
+# どちらも terraform init を必要とし、init は .tf が宣言した任意の module source を取得し、
+# validate は provider のバイナリを起動する。他の必須ワークフロー（tflint / shellcheck / trivy 等）は
+# いずれも対象 repo のコードを実行しない解析に揃えてあり、全 PR に強制される場所へコード実行を
+# 持ち込まないための線引き。terraform fmt は init 不要の構文整形のためこの線の内側に入る。
+#
+# 検査対象は terraform fmt が扱う HCL のみ（*.tf / *.tfvars / *.tftest.hcl）。
+# JSON 構文（*.tf.json / *.tfvars.json）は terraform fmt の対象外のため含めない。
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_call:  # Free プラン運用の caller から呼ばれる（docs/SETUP/FREE.md）
+
+permissions:
+  contents: read
+  pull-requests: read  # paths-filter の変更ファイル一覧取得に必要
+
+# 同一 PR に連投された run のみ束ねて追い越しキャンセル
+concurrency:
+  group: terraform-fmt-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  fmt:
+    name: "Terraform の書式を検査"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: "検査対象を判定"
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d  # v4.0.3
+        with:
+          list-files: json
+          # 削除ファイルは検査できないため対象外（rename は added + deleted に分解され新パス側が対象になる）
+          filters: |
+            terraform:
+              - added|modified|copied: "**/*.tf"
+              - added|modified|copied: "**/*.tfvars"
+              - added|modified|copied: "**/*.tftest.hcl"
+
+      - name: "Checkout"
+        if: steps.filter.outputs.terraform == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: "Install terraform"
+        if: steps.filter.outputs.terraform == 'true'
+        shell: bash
+        env:
+          # 書式のルールは版によってほぼ変わらないため、対象 repo の版を読み取らず中央で 1 つに固定する
+          # （版を repo 側の宣言に従わせると、PR が指定した任意の版をダウンロードすることになり
+          #   下の SHA-256 検証が成立しなくなる）
+          VERSION: 1.16.0
+          # terraform_1.16.0_linux_amd64.zip の SHA256（公式 SHA256SUMS から確定）
+          SHA256: 41d05b927aa174f15d1228c4eba832a323b716c68b415ef5a00179f46cc602d3
+        run: |
+          set -euo pipefail
+          ARCHIVE="terraform_${VERSION}_linux_amd64.zip"
+          curl -sSfL -o "$ARCHIVE" "https://releases.hashicorp.com/terraform/${VERSION}/${ARCHIVE}"
+
+          # SHA-256 検証（改ざん・破損を検知）
+          echo "${SHA256}  ${ARCHIVE}" | sha256sum -c -
+
+          sudo unzip -o "$ARCHIVE" terraform -d /usr/local/bin
+          sudo chmod +x /usr/local/bin/terraform
+          rm -f "$ARCHIVE"
+          terraform version
+
+      - name: "terraform fmt"
+        if: steps.filter.outputs.terraform == 'true'
+        shell: bash
+        env:
+          TARGETS: ${{ steps.filter.outputs.terraform_files }}
+        run: |
+          set -euo pipefail
+
+          # fmt は -recursive を付けなければ指定ディレクトリ直下だけを見るため、変更ファイルを
+          # ディレクトリに集約する。repo 全体を -recursive で検査すると、その PR が触っていない
+          # ディレクトリに元からある崩れでも fail してしまう。
+          # .terraform はキャッシュ・vendored モジュール置き場のため検査対象外
+          dirs=$(
+            jq -r '.[]' <<< "${TARGETS}" | { grep -Ev '(^|/)\.terraform/' || true; } \
+            | while IFS= read -r f; do dirname "${f}"; done | sort -u
+          )
+
+          status=0
+          while IFS= read -r dir; do
+            if [ -z "${dir}" ]; then continue; fi
+            echo "::group::${dir}"
+
+            # 差分を log に出し、どう直せばよいかを CI 上で読めるようにする
+            terraform fmt -check -no-color -diff "${dir}" || true
+            # -list は書式が一致しないファイルのパスだけを出す（annotation 用）
+            unformatted=$(terraform fmt -check -no-color -list=true "${dir}") || status=1
+
+            while IFS= read -r file; do
+              if [ -z "${file}" ]; then continue; fi
+              echo "::error file=${file}::terraform fmt: 書式が terraform fmt の出力と一致しません（\`terraform fmt\` を実行してください）"
+            done <<< "${unformatted}"
+            echo "::endgroup::"
+          done <<< "${dirs}"
+          exit "${status}"
