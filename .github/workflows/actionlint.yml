@@ -43,6 +43,27 @@ jobs:
         with:
           persist-credentials: false
 
+      # actionlint は shellcheck が PATH にあるときだけ run: の中身も検証する。
+      # runner image にも同梱されているが image 更新で版が変わるため、ここで固定する
+      - name: "Install shellcheck"
+        if: steps.filter.outputs.workflows == 'true'
+        shell: bash
+        env:
+          VERSION: 0.11.0
+          # shellcheck-v{version}.linux.x86_64.tar.xz の SHA256（リリースアセットの digest から確定）
+          SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+        run: |
+          set -euo pipefail
+          ARCHIVE="shellcheck-v${VERSION}.linux.x86_64.tar.xz"
+          curl -sSfL -o "$ARCHIVE" "https://github.com/koalaman/shellcheck/releases/download/v${VERSION}/${ARCHIVE}"
+
+          # SHA-256 検証（改ざん・破損を検知）
+          echo "${SHA256}  ${ARCHIVE}" | sha256sum -c -
+
+          sudo tar -xJ -C /usr/local/bin -f "$ARCHIVE" --strip-components=1 "shellcheck-v${VERSION}/shellcheck"
+          rm -f "$ARCHIVE"
+          shellcheck --version
+
       - name: "Install actionlint"
         if: steps.filter.outputs.workflows == 'true'
         shell: bash
