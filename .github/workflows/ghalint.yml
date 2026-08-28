@@ -29,7 +29,7 @@ jobs:
     steps:
       - name: "lint 実行要否を判定"
         id: filter
-        uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706  # v4.0.2
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d  # v4.0.3
         with:
           # 削除のみの変更は残りのファイルの lint 結果を変えないため対象外（rename は added + deleted に分解され新パス側が対象になる）。
           # 設定ファイルはポリシーの除外設定に影響するため対象（ghalint の自動探索パス ^(\.|\.github/)?ghalint\.ya?ml$ をすべて列挙）
@@ -46,7 +46,7 @@ jobs:
 
       - name: "Checkout"
         if: steps.filter.outputs.workflows == 'true'
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
 
