@@ -152,6 +152,7 @@ Rules セクションで以下のチェックを外す:
 | `github-workflows` | `main` | `.github/workflows/ghalint.yml` |
 
 ※ `ghalint` は必須ワークフローのため全 PR で起動されるが、GitHub Actions 関連ファイル(`.github/workflows/` と ghalint の設定ファイル)に変更がない PR ではワークフロー内の判定で lint を skip し success になる。
+※ `trivy` の検知レベルは中央が下限(`HIGH` / `CRITICAL`)を持ち、各リポジトリ直下の `trivy.yaml` の `severity` は**下限に上乗せする方向にのみ**効く(`MEDIUM` を足すことはできるが、`HIGH` を外すことはできない)。`scanners` / `exit-code` / `ignore-unfixed` は下限そのもののためリポジトリ側からは変更できない。
 
 </details>
 
@@ -265,7 +266,7 @@ File patterns:
 
 <details><summary><b>「✏️ スタイルチェック」</b></summary>
 
-> ワークフロー定義の構文チェック(actionlint)、Terraform の lint(tflint)、シェルスクリプトの lint(shellcheck)を必須化するルール。セキュリティ検知(2.3〜2.6)とは性質が異なるため別ルールセットで管理する
+> ワークフロー定義の構文チェック(actionlint)、Terraform の lint(tflint)と書式(terraform fmt)、シェルスクリプトの lint(shellcheck)を必須化するルール。セキュリティ検知(2.3〜2.6)とは性質が異なるため別ルールセットで管理する
 
 | 設定項目 | 値                        |
 |:-------:|:-------------------------|
@@ -288,10 +289,13 @@ Rules セクションで以下のチェックを外す:
 |:-----------|:-------|:---------|
 | `github-workflows` | `main` | `.github/workflows/actionlint.yml` |
 | `github-workflows` | `main` | `.github/workflows/tflint.yml` |
+| `github-workflows` | `main` | `.github/workflows/terraform-fmt.yml` |
 | `github-workflows` | `main` | `.github/workflows/shellcheck.yml` |
 
 ※ `actionlint` は必須ワークフローのため全 PR で起動されるが、ワークフロー関連ファイル(`.github/workflows/` と `.github/actionlint.yml`)に変更がない PR ではワークフロー内の判定で lint を skip し success になる。<br/>
-※ `tflint` も同様に全 PR で起動されるが、Terraform 関連ファイル(`*.tf` / `*.tfvars` / `.tflint.hcl` 等)に変更がない PR では lint を skip し success になる(Terraform 未使用のリポジトリでも合格する)。設定は「実行ディレクトリ自身の `.tflint.hcl` > リポジトリ直下の `.tflint.hcl`」の優先で適用され、どちらも無ければ組み込み terraform ruleset の recommended プリセットで lint される。<br/>
+※ `tflint` も同様に全 PR で起動されるが、Terraform 関連ファイル(`*.tf` / `*.tfvars` / `.tflint.hcl` 等)に変更がない PR では lint を skip し success になる(Terraform 未使用のリポジトリでも合格する)。設定は lint 対象ディレクトリからリポジトリルートへ遡って最初に見つかった `.tflint.hcl` が適用され(`terraform/.tflint.hcl` のような中間ディレクトリ配置でも効く)、1 つも無ければ組み込み terraform ruleset の recommended プリセットで lint される。<br/>
+※ `terraform fmt` も同様に全 PR で起動されるが、HCL(`*.tf` / `*.tfvars` / `*.tftest.hcl`)に変更がない PR では検査を skip し success になる。検査対象は変更されたファイルのあるディレクトリのみ(リポジトリ全体を `-recursive` で見ると、その PR が触っていない箇所の既存の崩れでも fail するため)。terraform の版は中央で固定しており、リポジトリ側の宣言(`.terraform-version` / `mise.toml` 等)は参照しない。<br/>
+※ `terraform validate` / `terraform test` は必須ワークフローに含めない。どちらも `terraform init` を必要とし、init はリポジトリの `.tf` が宣言した任意の module source を取得し、validate は provider のバイナリを起動する。必須ワークフローは全リポジトリの全 PR で走るため、対象リポジトリのコードを実行しない解析のみに揃えている(必要なリポジトリは自前のワークフローで実行する)。<br/>
 ※ `shellcheck` も同様に全 PR で起動されるが、シェルスクリプト(`*.sh` / `*.bash` / `*.ksh`)に変更がない PR では lint を skip し success になる。lint 対象は変更されたスクリプトのみで、検出は severity `warning` 以上(error / warning)に限定される。拡張子で判定するため、拡張子のないスクリプトは対象外。抑制設定はリポジトリ直下の `.shellcheckrc` で行う。
 
 </details>
