@@ -10,7 +10,6 @@ name: "🛡️ ghalint"
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-  workflow_call:  # Free プラン運用の caller から呼ばれる（docs/SETUP/FREE.md）
 
 permissions:
   contents: read
