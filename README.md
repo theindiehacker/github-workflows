@@ -1,6 +1,6 @@
 # 🔒 github-workflows
 Organization 共通のルールセット/CI/セキュリティワークフローを管理するリポジトリ
-> ⚠️ **注意** : GitHub Team プランであることが前提です（Free プランの場合は [docs/SETUP/FREE.md](./docs/SETUP/FREE.md) の構成で運用する）
+> ⚠️ **注意** : GitHub Team プランであることが前提です
 
 ```mermaid
 graph TD;
@@ -77,4 +77,4 @@ Renovate によるアップデート PR の起票は `renovate-config` リポジ
 ## ❓ 使い方
 ### 🎊 セットアップ
 
-[docs/SETUP/TEAM.md](./docs/SETUP/TEAM.md)（Team プラン）/ [docs/SETUP/FREE.md](./docs/SETUP/FREE.md)（Free プラン）を参照して、実行してください。
+[docs/SETUP.md](./docs/SETUP.md) を参照して、実行してください。

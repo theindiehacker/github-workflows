@@ -1,6 +1,6 @@
 # 🎊 セットアップ
 
-> 本書は GitHub Team プランが前提（ルールセットによるサーバー側の強制を使う）。Free プランの場合は [FREE.md](./FREE.md) を参照。
+> ⚠️ **前提** : Organization ルールセットによるサーバー側の強制を使うため、GitHub Team プランが必要。
 
 ## 0. 🏢 Organization の基本設定
 
