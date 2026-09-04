@@ -77,4 +77,4 @@ Renovate によるアップデート PR の起票は `renovate-config` リポジ
 ## ❓ 使い方
 ### 🎊 セットアップ
 
-[docs/SETUP/TEAM.md](./docs/SETUP/TEAM.md) を参照して、実行してください。
+[docs/SETUP.md](./docs/SETUP.md) を参照して、実行してください。
