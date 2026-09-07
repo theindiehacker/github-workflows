@@ -1,22 +1,71 @@
 # 🎊 セットアップ
 
-> ⚠️ **前提** : Organization ルールセットによるサーバー側の強制を使うため、GitHub Team プランが必要。
+> ⚠️ **前提** : GitHub Team プランを契約していること
 
 ## 0. 🏢 Organization の基本設定
 
-以降の章の前提となるアカウント・権限まわりの設定。Organization → Settings で行う。
+<details><summary>🫆 <b>二要素認証を必須にする</b></summary>
 
-| 設定箇所 | 設定項目 | 値                                                                                |
-|:--------|:--------|:---------------------------------------------------------------------------------|
-| Authentication security | Require two-factor authentication for everyone | ✅(有効化した時点で 2FA 未設定のメンバーは org から除外されるため、事前に周知する)                                  |
-| Member privileges | Base permissions | `Read`(write はリポジトリ・チーム単位で個別に付与する。承認が Required approvals にカウントされるのは write 保持者のみ) |
-| Member privileges | Repository forking(Allow forking of private repositories) | ❌(private コードが個人アカウント側へ複製されるのを防ぐ)                                                |
-| Member privileges | Repository creation | ❌(意図しない公開リポジトリの作成を防ぐため、Private, Public 両方のチェックを外し、管理者しかリポジトリを作成できないようにする)        |
+🔗 Organization → Settings → Authentication security
+
+![](./0/二要素認証を必須にする.png)
+*チェックを入れてください*
+
+⚠️ 二要素認証未設定のメンバーは org のリソースへアクセスできなくなり、outside collaborator は org から削除されるため、事前に周知すること
+```text
+【要対応・期限 ◯月◯日】GitHub の二要素認証(2FA)を設定お願いします。
+
+◯月◯日より、GitHub にて二要素認証を必須化します。
+期限までに設定がない場合、Organization のリポジトリなどのリソースにアクセスできなくなります。
+(設定すればすぐにアクセスが回復します)
+
+■ 設定手順(5 分程度)
+1. https://github.com/settings/security を開く
+2. "Two-factor authentication" の [Enable two-factor authentication] をクリック
+3. 認証方法として「パスキー / セキュリティキー」「認証アプリ」「GitHub Mobile」のいずれかを選ぶ  ※ SMS は推奨しません
+
+■ 設定済みか確認するには
+https://github.com/settings/security を開き、"Two-factor authentication" が
+有効(緑のチェック)になっていれば対応済みです。
+```
+
+</details>
+
+<details><summary>💪 <b>組織のリポジトリに対するベース権限を設定する</b></summary>
+
+🔗 Organization → Settings → Member privileges
+
+ - 将来メンバーが増える前提で「職務分掌」を意識したい → `No permission`
+ - 「組織メンバー＝基本的に全部のコードは見えてよい」という文化 & まだ少人数 → `Read`
+
+![Base permissions](./0/Base%20permissions.png)
+
+</details>
+
+<details><summary>❌ <b>管理者しかリポジトリを作成できないにする</b></summary>
+
+意図しない公開リポジトリの作成を防ぐため、Private, Public 両方のチェックを外し、管理者しかリポジトリを作成できないようにする
+
+🔗 Organization → Settings → Member privileges
+
+![](./0/Repository%20creation.png)
+*チェックを外してください*
+
+</details>
+
+<details><summary>🚫 <b>組織のリポジトリを fork できないようにする</b></summary>
+
+🔗 Organization → Settings → Member privileges
+
+![](./0/Repository%20forking.png)
+*チェックを外してください*
+
+</details>
 
 ---
 ## 1. 👥 セキュリティチームを作成
 Gitleaks や Trivy などがセキュリティ検知をした時に対応するチームを作成します。<br/>
-PR でセキュリティ検知された際はこのチームからの Approve がないとマージできない運用になります。
+PR でセキュリティ検知された際はこのチームからの Approve がないとマージできない運用にします。
 
 1. Organization → **Teams** → **New team** でチームを作成
 2. 対応者をメンバーに追加
