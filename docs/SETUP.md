@@ -115,6 +115,8 @@ Rules セクションで以下のチェックを外す:
 |:-----------|:-------|:---------|
 | `github-workflows` | `main` | `.github/workflows/gitleaks.yml` |
 
+ - ✅ **Do not require workflows on creation**
+
 ※ コミット前のローカル検知(シークレットを履歴に入れる前に止めるレイヤー)はリポジトリごとの任意運用とし、中央からは強制しない。pre-commit / lefthook / mise + gitleaks などツールも書き方もリポジトリによって異なり、設定ファイルの存在を機械的に検査すると正しく運用しているリポジトリまで fail するため。新規リポジトリへの初期設定はテンプレートリポジトリで配布する(本リポジトリ直下の `.pre-commit-config.yaml` が実例)。
 
 ※ PR 時のスキャン対象は差分(base..head)のみ。導入前から履歴に混入しているシークレットは検査されないため、既存リポジトリを本ルールセットに乗せる際は全履歴を一度スキャンしておく(検知されたらローテーション+履歴からの除去を行う):
@@ -150,6 +152,8 @@ Rules セクションで以下のチェックを外す:
 | `github-workflows` | `main` | `.github/workflows/zizmor.yml` |
 | `github-workflows` | `main` | `.github/workflows/semgrep.yml` |
 | `github-workflows` | `main` | `.github/workflows/ghalint.yml` |
+
+- ✅ **Do not require workflows on creation**
 
 ※ `ghalint` は必須ワークフローのため全 PR で起動されるが、GitHub Actions 関連ファイル(`.github/workflows/` と ghalint の設定ファイル)に変更がない PR ではワークフロー内の判定で lint を skip し success になる。
 ※ `trivy` の検知レベルは中央が下限(`HIGH` / `CRITICAL`)を持ち、各リポジトリ直下の `trivy.yaml` の `severity` は**下限に上乗せする方向にのみ**効く(`MEDIUM` を足すことはできるが、`HIGH` を外すことはできない)。`scanners` / `exit-code` / `ignore-unfixed` は下限そのもののためリポジトリ側からは変更できない。
@@ -291,6 +295,8 @@ Rules セクションで以下のチェックを外す:
 | `github-workflows` | `main` | `.github/workflows/tflint.yml` |
 | `github-workflows` | `main` | `.github/workflows/terraform-fmt.yml` |
 | `github-workflows` | `main` | `.github/workflows/shellcheck.yml` |
+
+- ✅ **Do not require workflows on creation**
 
 ※ `actionlint` は必須ワークフローのため全 PR で起動されるが、ワークフロー関連ファイル(`.github/workflows/` と `.github/actionlint.yml`)に変更がない PR ではワークフロー内の判定で lint を skip し success になる。<br/>
 ※ `tflint` も同様に全 PR で起動されるが、Terraform 関連ファイル(`*.tf` / `*.tfvars` / `.tflint.hcl` 等)に変更がない PR では lint を skip し success になる(Terraform 未使用のリポジトリでも合格する)。設定は lint 対象ディレクトリからリポジトリルートへ遡って最初に見つかった `.tflint.hcl` が適用され(`terraform/.tflint.hcl` のような中間ディレクトリ配置でも効く)、1 つも無ければ組み込み terraform ruleset の recommended プリセットで lint される。<br/>
