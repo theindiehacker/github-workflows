@@ -65,10 +65,11 @@ jobs:
 
       - name: "Trivy fs スキャン"
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
-        env: &trivy-db-env
+        env: &trivy-env
           # 必須ワークフローがレジストリのレート制限で落ちないよう、公式配布先 3 箇所をフォールバック指定する
           TRIVY_DB_REPOSITORY: mirror.gcr.io/aquasec/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2,public.ecr.aws/aquasecurity/trivy-db:2
           TRIVY_JAVA_DB_REPOSITORY: mirror.gcr.io/aquasec/trivy-java-db:1,ghcr.io/aquasecurity/trivy-java-db:1,public.ecr.aws/aquasecurity/trivy-java-db:1
+          TRIVY_IGNOREFILE: ${{ needs.detect.outputs.ignorefile }}  # 抑制ファイル（detect job 参照）
         with:
           scan-type: fs
           scan-ref: .
@@ -120,6 +121,7 @@ jobs:
     outputs:
       images: ${{ steps.detect.outputs.images }}
       severity: ${{ steps.policy.outputs.severity }}
+      ignorefile: ${{ steps.policy.outputs.ignorefile }}
     steps:
       - name: "Checkout"
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -139,8 +141,27 @@ jobs:
 
           cfg=""
           for c in trivy.yaml trivy.yml; do
-            if [ -f "$c" ]; then cfg="$c"; break; fi
+            if [ ! -f "${c}" ]; then continue; fi
+            if [ -z "${cfg}" ]; then cfg="${c}"; fi
+
+            # severity 以外のキー（scan.skip-dirs / scan.skip-files / pkg.types / ignorefile /
+            # ignore-policy 等）は CLI フラグで上書きできず検知を弱められるため、存在自体を禁止する
+            keys=$(
+              yq --output-format=json '.' "${c}" \
+                | jq -r 'if type == "null" then empty elif type == "object" then keys[] else type end'
+            )
+            while IFS= read -r key; do
+              case "${key}" in
+                ""|severity) ;;
+                *)
+                  echo "::error file=${c}::${c} で指定できるのは severity のみです: ${key}"
+                  invalid=1
+                  ;;
+              esac
+            done <<< "${keys}"
           done
+
+          if [ -n "${invalid:-}" ]; then exit 1; fi
 
           if [ -n "${cfg}" ]; then
             # プロセス置換の中で落ちても set -e は拾わない（yq が無い環境で repo の指定が
@@ -165,6 +186,13 @@ jobs:
           severity=$(printf '%s\n' "${levels[@]}" | sort -u | paste -sd, -)
           echo "severity=${severity}" >> "$GITHUB_OUTPUT"
           echo "検知する severity: ${severity}"
+
+          # .trivyignore は自動読込されるが、.trivyignore.yaml は experimental のため --ignorefile が必要。
+          # 指定できるのは 1 パスだけなので、両方ある repo では YAML 側だけが有効になる
+          ignorefile=.trivyignore
+          if [ -f .trivyignore.yaml ]; then ignorefile=.trivyignore.yaml; fi
+          echo "ignorefile=${ignorefile}" >> "$GITHUB_OUTPUT"
+          echo "抑制ファイル: ${ignorefile}"
 
       - name: "マニフェスト or 自動検出でスキャン対象を決定"
         id: detect
@@ -265,7 +293,7 @@ jobs:
       - name: "Trivy image スキャン"
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         # 起動ポリシーは scan-fs 側のアンカー定義（&trivy-*）を参照する（単一定義）
-        env: *trivy-db-env
+        env: *trivy-env
         with:
           scan-type: image
           image-ref: localbuild/trivy-scan:latest
