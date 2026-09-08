@@ -44,12 +44,10 @@ https://github.com/settings/security を開き、"Two-factor authentication" が
 
 <details><summary>❌ <b>管理者しかリポジトリを作成できないにする</b></summary>
 
-意図しない公開リポジトリの作成を防ぐため、Private, Public 両方のチェックを外し、管理者しかリポジトリを作成できないようにする
-
 🔗 Organization → Settings → Member privileges
 
 ![](./0/Repository%20creation.png)
-*チェックを外してください*
+*意図しない公開リポジトリの作成を防ぐため、Private, Public 両方のチェックを外し、管理者しかリポジトリを作成できないようにする*
 
 </details>
 
