@@ -22,22 +22,6 @@ graph TD;
     RepoB -->|🏃 実行| gw
 ```
 
-<details><summary><b>🧠 AI レビューの運用について</b></summary>
-
-AI レビューは以前 [Claude Code Github Actions](https://code.claude.com/docs/ja/github-actions) を利用して `/code-review` と `/security-review` を GitHub Actions で実行していましたが、以下の問題がありました。
-
- - バグ: コメントが投稿されずに Workflow が正常終了する
- - 料金: GitHub Actions 起動時間 + AIレビューのトークン
-
-そのため、以下の運用を検討中です。
-
-| 方法                                 | メリット                                                  | デメリット |
-|:-----------------------------------|:------------------------------------------------------|:---------|
-| 各開発者がローカルで AI レビューを実行する            | プラグイン配布すれば誰でもすぐに使える                                   | Approve / Request Changes ができない |
- | GitHub Apps 経由でAI レビューをクラウド上で実行させる | メンション付きでいつでも呼び出せる<br/> Approve / Request Changes ができる | 構築・保守運用コスト |
-
-</details>
-
 ## 🚧 防止・検知レイヤー
 
 **開発時**:
