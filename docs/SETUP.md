@@ -413,7 +413,7 @@ renovatebot/github-action@*
 
 - `permissions:` を明示しているワークフロー(本リポジトリのものを含む)には影響しない
 - 「create and approve pull requests」を無効化することで、`GITHUB_TOKEN` による自己承認で 2.2 / 2.5 / 2.6 の承認必須化が迂回されるのを防ぐ
-- この設定は `GITHUB_TOKEN` のみが対象。Renovate(5章)は GitHub App トークンで PR を作るため影響を受けない
+- この設定は `GITHUB_TOKEN` のみが対象。Renovate は GitHub App トークンで PR を作るため影響を受けない
 
 </details>
 
@@ -443,12 +443,3 @@ renovatebot/github-action@*
 | Policy: Enforce configuration | `Enforce`(リポジトリ側での設定変更を禁止) |
 
 4. Configurations 一覧で作成した configuration を選択し、**Apply to** → `All repositories` で全リポジトリに適用
-
----
-## 5. ♻️ Renovate を導入
-
-> 依存関係のアップデート PR は、`renovate-config` リポジトリのセルフホスト型 Renovate ランナーが毎日起票する
-
-セットアップ手順(GitHub App の作成・シークレットの登録)と運用方法は `renovate-config` リポジトリの `SETUP.md` / `README.md` を参照。
-
-※ ランナーの実行ログには autodiscover した Org 全リポジトリ名(private 含む)が出力されるため、ランナーは本リポジトリではなく private の `renovate-config` に置いて運用する。
