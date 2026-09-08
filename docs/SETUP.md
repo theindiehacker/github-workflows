@@ -240,7 +240,6 @@ File patterns:
 .trivyignore
 .trivyignore.yaml
 trivy.yaml
-trivy.yml
 .github/trivy-image.yml
 .github/trivy-image.yaml
 .github/zizmor.yml
@@ -254,8 +253,7 @@ ghalint.yaml
 .github/ghalint.yaml
 ```
 
-※ `trivy.yaml` / `trivy.yml`(リポジトリ直下)は Trivy が自動読込する設定ファイルで、`severity` 以外のキー(`scan.skip-dirs` / `scan.skip-files` / `pkg.types` / `ignorefile` / `ignore-policy` 等)は CLI フラグで上書きできず検知を弱められる。これらは `.github/workflows/trivy.yml` が `severity` 以外のキーの存在を検出して fail させるため、レビューでの目視確認は不要<br/>
-※ Trivy の検知を例外的に許容する場合は `.trivyignore` / `.trivyignore.yaml` に ID を追加して security チームの承認を得る。`.trivyignore.yaml` は `paths` でファイル単位に絞れて `expired_at` で期限を切れる(期限切れで再び検知される)が、experimental のため Trivy が自動読込しない。`.github/workflows/trivy.yml` が存在を検出して `--ignorefile` で渡すため、両方置くと `.trivyignore` の方が無効になる<br/>
+※ `trivy.yaml`(リポジトリ直下)は Trivy が自動読込する設定ファイルで、`ignorefile` / `ignore-policy` により抑制先を差し替えられるため対象に含める。レビュー時はこの 2 項目が上記対象外のファイルを指していないかを確認する<br/>
 ※ `**/.semgrepignore` は Semgrepignore v2(Semgrep 1.117 以降のデフォルト)でサブディレクトリの `.semgrepignore` も有効になるため対象に含める<br/>
 ※ zizmor の設定はワークフロー側(`.github/workflows/zizmor.yml` の `--config` / `--no-config`)で `.github/zizmor.yml` に固定しているため、自動探索され得る他パス(リポジトリ直下の `zizmor.yml` 等)の列挙は不要
 
