@@ -65,7 +65,7 @@ https://github.com/settings/security を開き、"Two-factor authentication" が
 Gitleaks や Trivy などがセキュリティ検知をした時に対応するチームを作成します。<br/>
 PR でセキュリティ検知された際はこのチームからの Approve がないとマージできない運用にします。
 
-1. Organization → **Teams** → **New team** でチームを作成
+1. Organization → **Teams** → **New team** でチーム「**security**」を作成
 2. 対応者をメンバーに追加
 3. Organization → Settings → **Organization roles** → **Role assignments** → **New role assignment** で、作成したチームに以下の 2 ロールをアサイン:
 
@@ -413,33 +413,5 @@ renovatebot/github-action@*
 
 - `permissions:` を明示しているワークフロー(本リポジトリのものを含む)には影響しない
 - 「create and approve pull requests」を無効化することで、`GITHUB_TOKEN` による自己承認で 2.2 / 2.5 / 2.6 の承認必須化が迂回されるのを防ぐ
-- この設定は `GITHUB_TOKEN` のみが対象。Renovate は GitHub App トークンで PR を作るため影響を受けない
 
 </details>
-
----
-## 4. 🚨 Dependabot alerts を有効化
-
-> Trivy は PR 時にしか実行されないため、マージ後に新規公開された CVE は Dependabot alerts で検知する。<br/>
-> 依存関係の更新は Renovate が担うため、alerts のみ有効化する。
-
-1. Organization → Settings → **Advanced Security** → **Configurations** を選択
-2. 「**Custom configuration**」を選択する
-   - 初回は「**Set up Advanced Security**」画面が表示されるが、**Review は押さない**(既定値は有料の Secret Protection / Code Security まで `Enabled` になっており、Dependabot も更新 PR 込みで有効化され Renovate と競合する)
-3. 以下の設定で configuration を作成し「**Save configuration**」:
-
-| 設定項目 | 値 |
-|:--------|:--|
-| Configuration name | `dependabot-alerts` |
-| Secret Protection | `Not set`(有料。$19/committer/月) |
-| Code Security | `Not set`(有料。$30/committer/月) |
-| Dependency graph | `Enabled` |
-| Dependabot alerts | `Enabled` |
-| Security updates | `Disabled`(更新 PR は Renovate に集約) |
-| Malware alerts | `Enabled`(無料。依存関係へのマルウェア混入を通知) |
-| Private vulnerability reporting | `Enabled`(初期値のまま。無料・public リポジトリのみ対象) |
-| 上記以外の項目 | 初期値のまま変更不要(`Not set` / `Disabled`) |
-| Policy: Use as default for newly created repositories | `All repositories`(新規リポジトリに自動適用) |
-| Policy: Enforce configuration | `Enforce`(リポジトリ側での設定変更を禁止) |
-
-4. Configurations 一覧で作成した configuration を選択し、**Apply to** → `All repositories` で全リポジトリに適用
