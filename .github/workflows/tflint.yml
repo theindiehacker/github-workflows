@@ -56,8 +56,8 @@ jobs:
         if: steps.filter.outputs.config == 'true' || steps.filter.outputs.terraform == 'true'
         shell: bash
         env:
+          # renovate: datasource=github-release-attachments depName=terraform-linters/tflint
           VERSION: 0.64.0
-          # tflint_linux_amd64.zip の SHA256（公式 checksums.txt から確定）
           SHA256: cca9d13e2e1d7a2c627af60ff899a3c9b74212899416aeb96ec764d2ef954537
         run: |
           set -euo pipefail

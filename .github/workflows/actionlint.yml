@@ -46,8 +46,8 @@ jobs:
         if: steps.filter.outputs.workflows == 'true'
         shell: bash
         env:
+          # renovate: datasource=github-release-attachments depName=rhysd/actionlint
           VERSION: 1.7.12
-          # actionlint_{version}_linux_amd64.tar.gz の SHA256（公式 checksums から確定）
           SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
         run: |
           set -euo pipefail
