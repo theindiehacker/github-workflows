@@ -16,9 +16,12 @@ name: "🐍 py-check"
 # 各ツールが動く条件:
 #   ruff          常に動く（repo の環境に依存しない）
 #   lint-imports  契約の設定がある repo で動く（依存導入済みなら repo の環境、それ以外は中央の Python で解決する）
-#   mypy / deptry uv.lock があり依存を導入できた repo でのみ動く。依存未導入のまま mypy を動かすと third-party の型が
-#                 欠け、warn_unused_ignores 等の設定と噛み合わずローカルで再現しない誤検知が出るため、uv.lock が無い repo は skip する。
+#   mypy / deptry uv.lock があり uv sync（既定 group のみ）が成功した repo でのみ動く。依存未導入のまま mypy を動かすと
+#                 third-party の型が欠け、warn_unused_ignores 等の設定と噛み合わずローカルで再現しない誤検知が出るため、
+#                 uv.lock が無い repo や sync に失敗した repo は skip する（sync 失敗は warning で知らせる）。
 #                 対象 repo の Python が TOOLS_MIN_PYTHON より古く中央固定版を載せられない場合も skip する
+#   app project（[build-system] 無し）では uv sync が自プロジェクトを venv に入れないため、
+#   src レイアウトは PYTHONPATH（lint-imports）/ MYPYPATH（mypy）に src を足して補う
 #
 # ツール版は対象 repo の宣言を読まず中央で固定する（terraform-fmt.yml と同じ理由）。
 # repo の環境が必要なツールは uv run --with で中央固定版を対象 repo の環境に重ねて起動する
@@ -63,43 +66,41 @@ jobs:
         with:
           list-files: json
           # 削除ファイルは検査できないため対象外（rename は added + deleted に分解され新パス側が対象になる）
-          # ruff_config: ruff の検出結果に影響する設定。変更時は ruff を repo 全体に掛ける
-          #   （uv.lock 等は ruff の結果を変えないため含めない。mypy / import-linter / deptry は常に repo 全体が対象）
-          # any: 本ワークフローを起動する全パターン（ruff_config + その他の Python 設定 + Python ファイル）
+          # ruff_config: ruff の検出結果に影響する設定。ruff は設定を階層的に解決するため下位ディレクトリも含め、
+          #   変更時は ruff を repo 全体に掛ける（mypy / import-linter / deptry は常に repo 全体が対象）
+          # other_config: ruff の結果は変えないが本ワークフローを起動する Python 設定
           # python: ruff に渡す変更ファイル
           filters: |
             ruff_config:
               - added|modified|copied: "pyproject.toml"
+              - added|modified|copied: "**/pyproject.toml"
               - added|modified|copied: "ruff.toml"
+              - added|modified|copied: "**/ruff.toml"
               - added|modified|copied: ".ruff.toml"
-            any:
-              - added|modified|copied: "pyproject.toml"
-              - added|modified|copied: "ruff.toml"
-              - added|modified|copied: ".ruff.toml"
+              - added|modified|copied: "**/.ruff.toml"
+            other_config:
               - added|modified|copied: "mypy.ini"
               - added|modified|copied: ".mypy.ini"
               - added|modified|copied: "setup.cfg"
               - added|modified|copied: ".importlinter"
               - added|modified|copied: "uv.lock"
               - added|modified|copied: ".python-version"
-              - added|modified|copied: "**/*.py"
-              - added|modified|copied: "**/*.pyi"
             python:
               - added|modified|copied: "**/*.py"
               - added|modified|copied: "**/*.pyi"
 
       - name: "Checkout"
-        if: steps.filter.outputs.any == 'true'
+        if: steps.filter.outputs.ruff_config == 'true' || steps.filter.outputs.other_config == 'true' || steps.filter.outputs.python == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
 
       - name: "Install uv"
         id: uv
-        if: steps.filter.outputs.any == 'true'
+        if: steps.filter.outputs.ruff_config == 'true' || steps.filter.outputs.other_config == 'true' || steps.filter.outputs.python == 'true'
         shell: bash
         env:
-          # uv の tag は v 接頭辞を持たない（他のツールは v 付き）ため、版の取り出し方だけ extractVersion で上書きする
+          # uv の tag は v 接頭辞を持たない（他のツールは v 付き）ため、renovate.json の「v 無し tag」用 manager で扱う
           # renovate: datasource=github-release-attachments depName=astral-sh/uv extractVersion=^(?<version>.*)$
           VERSION: 0.12.13
           SHA256: 745765a3b6e360ad76743599ae5c42e9278c7edf8bbff9fc76d05bf2623a04dd
@@ -119,9 +120,12 @@ jobs:
       # （4 ツール分の annotation を 1 回の run で出す）。依存する step の outcome だけを条件にする
 
       - name: "uv のキャッシュを復元"
-        # 依存の wheel とツールの使い捨て環境を PR をまたいで再利用する（保存は job 終了時に自動で行われる）
+        # 依存の wheel とツールの使い捨て環境を PR をまたいで再利用する。
+        # actions/cache は post-if: success() のため fail した run では保存されず、lint が fail する run こそ
+        # キャッシュが要るので restore / save に分け、save は末尾で !cancelled() として常に動かす
+        id: restore
         if: ${{ !cancelled() && steps.uv.outcome == 'success' }}
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: ~/.cache/uv
           key: py-check-uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
@@ -153,10 +157,20 @@ jobs:
             exit 0
           fi
 
-          # --output-format=github: 検出箇所を PR に annotation 表示する
+          # --output-format=github: 検出箇所を PR に annotation 表示する。ruff は file= を絶対パスで出すため
+          # repo ルート相対に直して他ツールと揃える（runner も workspace 配下の絶対パスは相対化するが、ログの見た目も揃える）
+          relativize() { sed -e "s#file=${GITHUB_WORKSPACE}/#file=#"; }
           status=0
-          "${ruff[@]}" check --no-fix --force-exclude --output-format=github "${targets[@]}" || status=1
-          "${ruff[@]}" format --check --force-exclude --output-format=github "${targets[@]}" || status=1
+          unformatted=0
+          "${ruff[@]}" check --no-fix --force-exclude --output-format=github "${targets[@]}" | relativize || status=1
+          "${ruff[@]}" format --check --force-exclude --output-format=github "${targets[@]}" | relativize || unformatted=1
+          if [ "${unformatted}" -ne 0 ]; then
+            status=1
+            # 差分を log に出し、どう直せばよいかを CI 上で読めるようにする
+            echo "::group::ruff format --diff"
+            "${ruff[@]}" format --diff --force-exclude "${targets[@]}" || true
+            echo "::endgroup::"
+          fi
           exit "${status}"
 
       - name: "依存関係を導入"
@@ -172,9 +186,16 @@ jobs:
             exit 0
           fi
 
-          # --frozen: lock をそのまま使う（pyproject.toml との乖離は検査対象外）
-          # 型スタブ（types-* 等）は dev group に置かれることが多いため、全 group・全 extra を導入する
-          uv sync --frozen --all-extras --all-groups
+          # --frozen: lock をそのまま使う（pyproject.toml との乖離は検査対象外）。
+          # 導入するのは既定の group（通常 dev）まで。全 extra / 全 group を入れると、private index や GPU 系 wheel を
+          # 要する extra が 1 つあるだけで無関係な PR まで塞いでしまう。型スタブは dev group に置くか、
+          # repo 側の [tool.uv] default-groups で指定する。sync 自体の失敗も同じ理由でブロックせず縮退する
+          if ! uv sync --frozen; then
+            echo "::warning::uv sync に失敗したため依存関係を導入せずに続行します（mypy / deptry は skip）。uv.lock と index の設定を確認してください"
+            echo "installed=false" >> "${GITHUB_OUTPUT}"
+            echo "tools_supported=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
           echo "installed=true" >> "${GITHUB_OUTPUT}"
 
           # 中央固定版のツールは repo の環境（.venv）に uv run --with で重ねるため、その Python が
@@ -195,13 +216,17 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${DEPS_INSTALLED}" != "true" ]; then
-            echo "::notice::mypy: uv.lock が無く依存関係が未導入のため skip"
+            echo "::notice::mypy: 依存関係が未導入のため skip"
             exit 0
           fi
           if [ "${TOOLS_SUPPORTED}" != "true" ]; then
             echo "::notice::mypy: 対象 repo の Python が ${TOOLS_MIN_PYTHON} より古いため skip"
             exit 0
           fi
+
+          # app project（[build-system] 無し）では uv sync が自プロジェクトを venv に入れないため、
+          # src レイアウトでは mypy の module 探索に src を足す（mypy は PYTHONPATH を見ない）
+          if [ -d src ]; then export MYPYPATH="${PWD}/src${MYPYPATH:+:${MYPYPATH}}"; fi
 
           # 設定ファイル（mypy と同じ優先順で最初に見つかったもの）が files / packages / modules で対象を宣言していれば
           # それに従い、無ければ "." を渡す。mypy は引数も宣言も無いとエラー終了するため、この判定が必要
@@ -243,27 +268,32 @@ jobs:
           PY
           )
           targets=()
-          if [ "${targets_declared}" != "true" ]; then
-            # mypy は "." 配下でも隠しディレクトリ・__pycache__・site-packages・node_modules を走査せず、対象が 0 件だと
-            # exit 2 になる（Python が .github/scripts/ にしか無い repo 等）。同じ範囲で .py の有無を先に確かめる
-            if [ -z "$(find . -mindepth 1 \( -name '.*' -o -name __pycache__ -o -name site-packages -o -name node_modules \) -prune -o -type f \( -name '*.py' -o -name '*.pyi' \) -print -quit)" ]; then
-              echo "::notice::mypy: 走査範囲（隠しディレクトリ等を除く）に .py が無いため skip"
-              exit 0
-            fi
-            targets=(.)
-          fi
+          if [ "${targets_declared}" != "true" ]; then targets=(.); fi
 
           # 型検査は変更ファイルだけでは成立しない（import 先の型が結果を変える）ため、常に repo 全体を対象にする
           result="${RUNNER_TEMP}/mypy.jsonl"
+          errors="${RUNNER_TEMP}/mypy.stderr"
           status=0
-          uv run --no-sync --with "mypy==${MYPY_VERSION}" mypy --output json --no-error-summary "${targets[@]}" > "${result}" || status=$?
+          uv run --no-sync --with "mypy==${MYPY_VERSION}" mypy --output json --no-error-summary "${targets[@]}" > "${result}" 2> "${errors}" || status=$?
+          cat "${errors}"
 
-          # 検出箇所を PR に annotation 表示する（column は 0 始まりのため +1）
+          if [ "${status}" -ne 0 ] && [ ! -s "${result}" ]; then
+            # 検出結果を書く前に終了した場合。走査範囲（隠しディレクトリ等を除く）に .py が無いだけなら検査対象なしとして
+            # skip し、それ以外（設定の誤り・パッケージが見つからない等）は PR に表示する
+            if grep -qF "There are no .py[i] files in directory" "${errors}"; then
+              echo "::notice::mypy: 走査範囲（隠しディレクトリ等を除く）に .py が無いため skip"
+              exit 0
+            fi
+            echo "::error::mypy: 実行に失敗しました: $(tail -n 1 "${errors}")"
+            exit "${status}"
+          fi
+
+          # 検出箇所を PR に annotation 表示する（column は 0 始まりのため +1。ファイル単位のエラーは line が -1 で来るため省く）
           echo "::group::mypy 出力（JSON Lines）"
           cat "${result}"
           echo "::endgroup::"
           jq -r '
-            "::\(if .severity == "error" then "error" else "notice" end) file=\(.file),line=\(.line),col=\(.column + 1)::mypy (\(.code // "-")): \(.message)"
+            "::\(if .severity == "error" then "error" else "notice" end) file=\(.file)\(if .line > 0 then ",line=\(.line),col=\(.column + 1)" else "" end)::mypy (\(.code // "-")): \(.message)"
           ' "${result}"
           exit "${status}"
 
@@ -282,13 +312,15 @@ jobs:
             exit 0
           fi
 
+          # app project（[build-system] 無し）では uv sync が自プロジェクトを venv に入れないため、
+          # 依存導入の有無にかかわらず flat / src レイアウトを直接 sys.path に載せる
+          export PYTHONPATH="${PWD}/src:${PWD}${PYTHONPATH:+:${PYTHONPATH}}"
           if [ "${TOOLS_SUPPORTED}" = "true" ]; then
-            # 依存導入済みなら repo の環境に重ねる（自パッケージは導入済みなので import 可能）
+            # 依存導入済みなら repo の環境に重ねる
             lint_imports=(uv run --no-sync --with "import-linter==${IMPORT_LINTER_VERSION}" lint-imports)
           else
-            # 依存未導入（または Python が古い）なら中央の Python で動かし、flat / src レイアウトを直接 sys.path に載せる
+            # 依存未導入（または Python が古い）なら中央の Python で動かす
             lint_imports=(uv tool run --python "${TOOLS_PYTHON}" --from "import-linter==${IMPORT_LINTER_VERSION}" lint-imports)
-            export PYTHONPATH="${PWD}/src:${PWD}"
           fi
 
           log="${RUNNER_TEMP}/lint-imports.log"
@@ -315,7 +347,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${DEPS_INSTALLED}" != "true" ]; then
-            echo "::notice::deptry: uv.lock が無く依存関係が未導入のため skip（import 名とパッケージ名の対応に導入済みメタデータが必要）"
+            echo "::notice::deptry: 依存関係が未導入のため skip（import 名とパッケージ名の対応に導入済みメタデータが必要）"
             exit 0
           fi
           if [ "${TOOLS_SUPPORTED}" != "true" ]; then
@@ -323,12 +355,13 @@ jobs:
             exit 0
           fi
 
-          # src レイアウト（src/ 配下に Python がある）では src を root にしないと自パッケージを transitive dependency（DEP003）と
-          # 誤検知する。src/ が別言語の repo で全依存が DEP002 にならないよう、.py の有無で判定する。
+          # src レイアウトでは src を root に足さないと自パッケージを transitive dependency（DEP003）と誤検知し、
+          # src だけにすると scripts/ や docs/ 等 src 外でしか使わない依存が DEP002 になるため、両方を root にする
+          # （src 配下は 2 回走査されるので annotation は sort -u で重複を除く）。
           # deptry 既定の除外（tests 等）は cwd 相対の前方一致のため src/tests は除外されない。
-          # これ以外のレイアウトや除外は repo 側の [tool.deptry]（known_first_party / extend_exclude）で調整する
+          # 他のレイアウトや除外は repo 側の [tool.deptry]（known_first_party / extend_exclude）で調整する
           root=(.)
-          if [ -d src ] && [ -n "$(find src -type f -name '*.py' -print -quit)" ]; then root=(src); fi
+          if [ -d src ] && [ -n "$(find src -type f -name '*.py' -print -quit)" ]; then root=(. src); fi
 
           result="${RUNNER_TEMP}/deptry.json"
           status=0
@@ -338,9 +371,25 @@ jobs:
           if [ -s "${result}" ]; then
             jq -r '.[]
               | "::error file=\(.location.file)\(if .location.line != null then ",line=\(.location.line),col=\(.location.column)" else "" end)::deptry (\(.error.code)): \(.error.message)"
-            ' "${result}"
+            ' "${result}" | sort -u
           elif [ "${status}" -ne 0 ]; then
             # 検出結果を書く前に失敗した場合（依存の宣言が見つからない等）も PR に表示する
             echo "::error::deptry: 実行に失敗しました（ログを確認してください）"
           fi
           exit "${status}"
+
+      - name: "uv のキャッシュを整理"
+        # 完全一致で復元できた run では保存し直さない（内容が同じため）
+        if: ${{ !cancelled() && steps.restore.outcome == 'success' && steps.restore.outputs.cache-hit != 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # CI では再利用されない展開済み wheel 等を落として保存サイズを抑える
+          uv cache prune --ci
+
+      - name: "uv のキャッシュを保存"
+        if: ${{ !cancelled() && steps.restore.outcome == 'success' && steps.restore.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.cache/uv
+          key: ${{ steps.restore.outputs.cache-primary-key }}

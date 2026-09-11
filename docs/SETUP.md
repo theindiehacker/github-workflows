@@ -306,7 +306,7 @@ File patterns:
 
 <details><summary><b>「✏️ スタイルチェック」</b></summary>
 
-> ワークフロー定義の構文チェック(actionlint)、Terraform の lint(tflint)と書式(terraform fmt)、シェルスクリプトの lint(shellcheck)、Python の lint・書式・型・依存関係チェック(py-check)を必須化するルール。セキュリティ検知(2.3〜2.6)とは性質が異なるため別ルールセットで管理する
+> ワークフロー定義の構文チェック(actionlint)、Terraform の lint(tflint)と書式(terraform fmt)、シェルスクリプトの lint(shellcheck)、Python の lint・書式(ruff)と依存関係の契約(import-linter)、`uv.lock` のある repo では型(mypy)と不要パッケージ(deptry)のチェック(py-check)を必須化するルール。セキュリティ検知(2.3〜2.6)とは性質が異なるため別ルールセットで管理する
 
 | 設定項目 | 値                        |
 |:-------:|:-------------------------|
