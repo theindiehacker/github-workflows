@@ -1,7 +1,7 @@
 name: "🧠 [Claude] Code Review"
 
 # 各リポジトリから workflow_call で呼び出す reusable workflow。
-# 呼び出し側は workflow-templates/claude.yml を各リポジトリの .github/workflows/claude.yml にコピーしたもの。
+# 呼び出し側 (.github/workflows/claude.yml) は claude-plugins で配布する (仕様: SETUP.md 4.3)。
 # github コンテキスト（event / repository / run_id）は呼び出し元のものになるため、issue_comment 前提のロジックはそのまま動く。
 # 本ファイルの変更は呼び出し側の全リポジトリに影響するため security チームの承認が必要（SETUP.md 2.6）
 on:
@@ -34,12 +34,17 @@ jobs:
       group: code-review-pr-${{ github.event.issue.number }}
       cancel-in-progress: true
 
-    # pwn request 対策。4 条件すべてを満たすことを要求する (条件を緩めないこと)
+    # pwn request 対策。条件を緩めないこと
+    # コマンドは行頭の単独トークンに限定する (startsWith だけだと `/code-reviewers ...` のような近似コメントが
+    # ここを通過し、concurrency で実行中のレビューを巻き添えキャンセルする)
     # closed / merged PR では action が PR ブランチではなく新規ブランチを作る経路に入るため open のみ
     if: >-
       github.event.issue.pull_request &&
       github.event.issue.state == 'open' &&
-      startsWith(github.event.comment.body, '/code-review') &&
+      (github.event.comment.body == '/code-review' ||
+      startsWith(github.event.comment.body, '/code-review ') ||
+      startsWith(github.event.comment.body, format('/code-review{0}', fromJSON('"\n"'))) ||
+      startsWith(github.event.comment.body, format('/code-review{0}', fromJSON('"\r\n"')))) &&
       github.event.comment.user.type != 'Bot' &&
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
 
@@ -58,7 +63,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          # job の if は startsWith なので `/code-reviewers ...` を弾けない。先頭行を単語境界付きで再判定する
+          # job の if (startsWith) は大文字小文字を区別しないため `/Code-review` などを弾けない。先頭行を大文字小文字を区別して再判定する
           first_line="${COMMENT_BODY%%$'\n'*}"
           first_line="${first_line//$'\r'/}"
           if ! printf '%s' "$first_line" | grep -Eq '^/code-review([[:space:]]|$)'; then
@@ -152,18 +157,21 @@ jobs:
           # どちらか一方だけが組織シークレットに登録されている前提。空文字は action 側で未設定として扱われる
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          # 必須。PR head の .claude/ CLAUDE.md .mcp.json をこの branch の内容へ戻す復元元になる
+          # open PR では action が PR の実 base を使うため未使用。closed PR を許可した場合の新規ブランチの起点として渡しておく
           base_branch: ${{ steps.preflight.outputs.base_ref }}
           track_progress: 'true'
           show_full_output: false
           # git fetch / git remote は許可しない (前置マッチ (:*) だと --upload-pack= で任意コマンドが実行できる)
           # .git/** は action が origin URL に埋め込む生トークンが置かれるため Read ごと禁止する
           # (Read の deny は Grep / Glob にも適用される)
+          # tag mode (issue_comment + track_progress) は git add / commit / rm と push スクリプトを allow に注入し、
+          # ここで指定した --allowedTools と和集合になるため、deny で塞ぐ (deny は allow より優先される)。
+          # git diff --no-index は .git/config のトークンや /proc/self/environ を読め、--output は任意パスへ書けるため禁止する。
           claude_args: |
             --model ${{ steps.preflight.outputs.model }}
             --max-turns 200
             --allowedTools "Read,Grep,Glob,LS,Agent,Task,TodoWrite,Skill,SlashCommand,ReportFindings,mcp__github_comment__update_claude_comment,mcp__github_inline_comment__create_inline_comment,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git rev-parse:*),Bash(git merge-base:*),Bash(git branch:*)"
-            --disallowedTools "Write,Edit,MultiEdit,NotebookEdit,WebFetch,WebSearch,Read(./.git/**),Bash(gh:*),Bash(curl:*),Bash(wget:*)"
+            --disallowedTools "Write,Edit,MultiEdit,NotebookEdit,WebFetch,WebSearch,Read(./.git/**),Bash(gh:*),Bash(curl:*),Bash(wget:*),Bash(git add:*),Bash(git commit:*),Bash(git rm:*),Bash(git push:*),Bash(*git-push.sh*),Bash(git diff --no-index *),Bash(git diff * --no-index *),Bash(git diff * --no-index),Bash(git *--output*)"
           # CLI 組み込みの code-review スキルを使うこと (marketplace プラグインに戻さないこと)
           prompt: |
             /code-review xhigh --comment ${{ github.repository }}/pull/${{ env.PR_NUMBER }}
@@ -195,7 +203,8 @@ jobs:
                  この `判定` は CI が結論の有無を検知する目印なので必ず含める。
               2. 指摘がある場合はその一覧 (インラインコメントを付けたファイルと要点)
               3. 何を見てそう判断したか (確認した差分の範囲・観点)。あわせてレビュー対象が
-                 コミット `${{ steps.sha.outputs.head_sha }}`、差分基点が
+                 `git rev-parse HEAD` で得たコミット (action が PR ブランチを再 checkout するため、
+                 起動時の SHA ではなく実際に diff を取った HEAD を書く)、差分基点が
                  `${{ steps.sha.outputs.merge_base }}` であることを明記する。
             </review_rules>
 
@@ -223,10 +232,11 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          # gh は --slurp と --jq を同時に指定できないため、取得と抽出を分ける
-          if ! comments="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" --paginate --slurp 2>&1)"; then
+          # gh は --slurp と --jq を同時に指定できないため、取得と抽出を分ける。
+          # stderr は別ファイルに取る (成功時の警告が JSON に混ざると jq が parse error になる)
+          if ! comments="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" --paginate --slurp 2>"${RUNNER_TEMP}/gh-api.err")"; then
             # 検証できないこととレビューの失敗は別なので、警告に留める
-            echo "::warning::コメントを取得できず結論の有無を検証できませんでした: ${comments}"
+            echo "::warning::コメントを取得できず結論の有無を検証できませんでした: $(cat "${RUNNER_TEMP}/gh-api.err")"
             exit 0
           fi
           # 進捗コメントは action (Bot) が投稿し、本文に実行ログ URL を含む。
@@ -242,17 +252,21 @@ jobs:
           fi
           # 「未完了チェックボックスが無いこと」の否定条件にしないこと。
           # PR テンプレートの引用や未対応指摘の列挙で `- [ ]` が現れて誤検知するうえ、
-          # 結論を一度も書かずに終わったケース (チェックボックス自体が無い) を取りこぼす
-          if [[ "$body" == *"判定"* ]]; then
+          # 結論を一度も書かずに終わったケース (チェックボックス自体が無い) を取りこぼす。
+          # 部分一致にもしないこと。進捗チェックリストに「判定を書く」のような行が残ったまま終わっても通ってしまう。
+          # 行頭 (見出し・箇条書き・太字の装飾は許容) の `判定:` だけを結論として認める
+          if grep -Eq '^[[:space:]]*([#>*-]+[[:space:]]*)*\**判定\**[[:space:]]*(:|：)' <<< "$body"; then
             echo "レビューは結論まで書き終えています"
             exit 0
           fi
           echo "::error::レビューが結論を書かずに終了しました (進捗コメントに判定がありません)"
-          # 通知済みかどうかは outcome ではなくこのフラグで表す (verify 自身の想定外エラーと区別する)
-          echo "notified=true" >> "$GITHUB_OUTPUT"
-          gh pr comment "$PR_NUMBER" --body "$(
+          # 通知済みかどうかは outcome ではなくこのフラグで表す (verify 自身の想定外エラーと区別する)。
+          # 投稿に失敗した場合はフラグを立てず、末尾の通知 step に任せる
+          if gh pr comment "$PR_NUMBER" --body "$(
             printf '## 🧠 AI コードレビュー\n\nレビューが**結論を書かずに終了**しました (進捗コメントに判定が残っていません)。\nこの run の結果は「指摘なし」の根拠になりません。もう一度 /code-review で実行してください。\n\n[ワークフロー実行ログ](%s)\n' "$RUN_URL"
-          )" || true
+          )"; then
+            echo "notified=true" >> "$GITHUB_OUTPUT"
+          fi
           exit 1
 
       # 巻き添えキャンセルと timeout はどちらも cancelled() になるため failure() だけでは拾えない
