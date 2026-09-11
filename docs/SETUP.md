@@ -306,7 +306,7 @@ File patterns:
 
 <details><summary><b>「✏️ スタイルチェック」</b></summary>
 
-> ワークフロー定義の構文チェック(actionlint)、Terraform の lint(tflint)と書式(terraform fmt)、シェルスクリプトの lint(shellcheck)を必須化するルール。セキュリティ検知(2.3〜2.6)とは性質が異なるため別ルールセットで管理する
+> ワークフロー定義の構文チェック(actionlint)、Terraform の lint(tflint)と書式(terraform fmt)、シェルスクリプトの lint(shellcheck)、Python の lint・書式・型・依存関係チェック(py-check)を必須化するルール。セキュリティ検知(2.3〜2.6)とは性質が異なるため別ルールセットで管理する
 
 | 設定項目 | 値                        |
 |:-------:|:-------------------------|
@@ -331,6 +331,7 @@ Rules セクションで以下のチェックを外す:
 | `github-workflows` | `main` | `.github/workflows/tflint.yml` |
 | `github-workflows` | `main` | `.github/workflows/terraform-fmt.yml` |
 | `github-workflows` | `main` | `.github/workflows/shellcheck.yml` |
+| `github-workflows` | `main` | `.github/workflows/py-check.yml` |
 
 - ✅ **Do not require workflows on creation**
 
