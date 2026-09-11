@@ -149,6 +149,103 @@ jobs:
           echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
           echo "merge_base=$merge_base" >> "$GITHUB_OUTPUT"
 
+      # allow / deny ルールはコマンド文字列の一致でセキュリティ境界ではない (引用で deny を外せるうえ、
+      # `git diff /dev/null .git/config` は --no-index 無しでも通る)。ツール呼び出しの実引数を PreToolUse hook で検査し、
+      # リポジトリ外・.git/ 配下のパスと環境変数の展開を拒否する。hook は PR head の checkout に置かず RUNNER_TEMP に書き出す
+      - name: "🛡️ ツール呼び出しガードを配置"
+        if: steps.preflight.outputs.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "${RUNNER_TEMP}/claude-guard.py" <<'PY'
+          # Claude Code の PreToolUse hook。allow / deny ルールはコマンド文字列の一致であってセキュリティ境界ではないため、
+          # ツール呼び出しの実引数を検査し、リポジトリ外・.git/ 配下の読み書きと環境変数の展開を拒否する (exit 2 = ブロック)。
+          # 判定できない入力は通さない (fail-closed)。
+          import json
+          import os
+          import re
+          import shlex
+          import sys
+
+
+          def deny(reason):
+              print("guard: " + reason, file=sys.stderr)
+              sys.exit(2)
+
+
+          def main():
+              data = json.load(sys.stdin)
+              tool = data.get("tool_name") or ""
+              inp = data.get("tool_input") or {}
+              root = os.path.realpath(data.get("cwd") or os.getcwd())
+              git_dir = os.path.join(root, ".git")
+
+              def check_path(p):
+                  # symlink と .. を解決した実体で判定する (PR head の checkout には攻撃者の symlink が含まれうる)
+                  rp = os.path.realpath(os.path.join(root, os.path.expanduser(p)))
+                  if rp != root and not rp.startswith(root + os.sep):
+                      deny("リポジトリ外のパスは扱えません: " + p)
+                  if rp == git_dir or rp.startswith(git_dir + os.sep):
+                      deny(".git/ 配下は扱えません: " + p)
+
+              if tool == "Bash":
+                  cmd = inp.get("command") or ""
+                  # bash で変数展開・コマンド置換を行うには $ か ` が必ず必要 (GH_TOKEN 等の env を引数に展開させない)
+                  if "$" in cmd or "`" in cmd:
+                      deny("環境変数の展開・コマンド置換は使えません")
+                  try:
+                      tokens = shlex.split(cmd)  # 引用・エスケープによる難読化を無効化する
+                  except ValueError:
+                      deny("引用符が閉じていません")
+                  expect_redirect_target = False
+                  for t in tokens:
+                      if expect_redirect_target:
+                          expect_redirect_target = False
+                          if t != "/dev/null":
+                              deny("リダイレクトによる書き込みは使えません: " + t)
+                          continue
+                      m = re.match(r"^\d*>{1,2}(.*)$", t)
+                      if m:
+                          target = m.group(1)
+                          if target == "":
+                              expect_redirect_target = True
+                          elif target not in ("/dev/null", "&1", "&2"):
+                              deny("リダイレクトによる書き込みは使えません: " + t)
+                          continue
+                      if t.startswith(("--no-index", "--output")):
+                          deny("使えないオプションです: " + t)
+                      if re.search(r"(^|[=<>])~", t):  # チルダ展開のみ拒否 (HEAD~1 の祖先指定は許可)
+                          deny("~ の展開は使えません: " + t)
+                      if re.search(r"(^|/)\.\.(/|$)", t):
+                          deny(".. は使えません: " + t)
+                      if re.search(r"(^|[/:=])\.git(/|$)", t):
+                          deny(".git/ 配下は扱えません: " + t)
+                      # 絶対パス (引数そのもの、または = < > の後) はリポジトリ内に限る。/dev/null だけは許可する
+                      for p in re.findall(r"(?:^|[=<>])(/[^=<>]*)", t):
+                          if p != "/dev/null":
+                              check_path(p)
+                      # 相対パスは symlink 先まで確認する
+                      if not t.startswith("/") and ("/" in t or os.path.lexists(os.path.join(root, t))):
+                          check_path(t)
+                  if expect_redirect_target:
+                      deny("リダイレクト先がありません")
+              elif tool in ("Read", "Grep", "Glob", "LS"):
+                  for key in ("file_path", "path", "notebook_path"):
+                      p = inp.get(key)
+                      if p:
+                          check_path(str(p))
+              sys.exit(0)
+
+
+          try:
+              main()
+          except SystemExit:
+              raise
+          except Exception as e:  # 入力を解釈できない場合も通さない
+              deny("入力を解釈できません: " + type(e).__name__)
+          PY
+          python3 -m py_compile "${RUNNER_TEMP}/claude-guard.py"
+
       - name: Run Claude Code Review
         id: review
         if: steps.preflight.outputs.skip != 'true'
@@ -161,17 +258,33 @@ jobs:
           base_branch: ${{ steps.preflight.outputs.base_ref }}
           track_progress: 'true'
           show_full_output: false
+          # 上の step で配置した hook を Bash / Read / Grep / Glob / LS の呼び出し前に実行する (exit 2 でブロック。allow より優先される)
+          settings: |
+            {
+              "hooks": {
+                "PreToolUse": [
+                  {
+                    "matcher": "Bash|Read|Grep|Glob|LS",
+                    "hooks": [
+                      { "type": "command", "command": "python3 ${{ runner.temp }}/claude-guard.py" }
+                    ]
+                  }
+                ]
+              }
+            }
           # git fetch / git remote は許可しない (前置マッチ (:*) だと --upload-pack= で任意コマンドが実行できる)
+          # git diff:* / git log:* は絞らない。skill が読み込み時に実行する `git diff --name-only origin/HEAD...` 等が allow を通る必要がある
           # .git/** は action が origin URL に埋め込む生トークンが置かれるため Read ごと禁止する
           # (Read の deny は Grep / Glob にも適用される)
           # tag mode (issue_comment + track_progress) は git add / commit / rm と push スクリプトを allow に注入し、
           # ここで指定した --allowedTools と和集合になるため、deny で塞ぐ (deny は allow より優先される)。
-          # git diff --no-index は .git/config のトークンや /proc/self/environ を読め、--output は任意パスへ書けるため禁止する。
+          # git diff --no-index / --output の deny は文字列一致の補助 (実効的な防御は上の hook)。
+          # /proc は git では空になるが Read ツールでは読めるため Read(//proc/**) も deny する (hook でも拒否する)。
           claude_args: |
             --model ${{ steps.preflight.outputs.model }}
             --max-turns 200
             --allowedTools "Read,Grep,Glob,LS,Agent,Task,TodoWrite,Skill,SlashCommand,ReportFindings,mcp__github_comment__update_claude_comment,mcp__github_inline_comment__create_inline_comment,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git rev-parse:*),Bash(git merge-base:*),Bash(git branch:*)"
-            --disallowedTools "Write,Edit,MultiEdit,NotebookEdit,WebFetch,WebSearch,Read(./.git/**),Bash(gh:*),Bash(curl:*),Bash(wget:*),Bash(git add:*),Bash(git commit:*),Bash(git rm:*),Bash(git push:*),Bash(*git-push.sh*),Bash(git diff --no-index *),Bash(git diff * --no-index *),Bash(git diff * --no-index),Bash(git *--output*)"
+            --disallowedTools "Write,Edit,MultiEdit,NotebookEdit,WebFetch,WebSearch,Read(./.git/**),Read(//proc/**),Bash(gh:*),Bash(curl:*),Bash(wget:*),Bash(git add:*),Bash(git commit:*),Bash(git rm:*),Bash(git push:*),Bash(*git-push.sh*),Bash(git diff --no-index *),Bash(git diff * --no-index *),Bash(git diff * --no-index),Bash(git *--output*)"
           # CLI 組み込みの code-review スキルを使うこと (marketplace プラグインに戻さないこと)
           prompt: |
             /code-review xhigh --comment ${{ github.repository }}/pull/${{ env.PR_NUMBER }}
