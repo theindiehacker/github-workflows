@@ -262,7 +262,8 @@ ghalint.yaml
 <details><summary><b>「🛠️ 検知ワークフロー変更の承認必須化」</b></summary>
 
 > 必須ワークフローの実体(本リポジトリの `.github/workflows/`)を変更する PR にセキュリティチーム(`security`)の承認を必須化するルール。
-> 必須ワークフロー(2.3〜2.4・2.7)は本リポジトリの `main` 上の定義を参照しているため、検知を弱める変更(severity の引き下げ・`exit-code: 0` 化など)が通常の承認(2.2)だけで通ると org 全体の検知が無効化されてしまう
+> 必須ワークフロー(2.3〜2.4・2.7)は本リポジトリの `main` 上の定義を参照しているため、検知を弱める変更(severity の引き下げ・`exit-code: 0` 化など)が通常の承認(2.2)だけで通ると org 全体の検知が無効化されてしまう。
+> Claude Code レビューの reusable workflow(`claude-*.yml`、「4.」参照)も同じディレクトリにあり、呼び出し側の全リポジトリで write 権限付きのプロンプトとして動くため本ルールの対象になる
 
 | 設定項目 | 値                        |
 |:-------:|:-------------------------|
@@ -392,14 +393,17 @@ Organization → Settings → **Actions** → **General** で以下を設定す�
 | Allow specified actions and reusable workflows | 下記のパターンを登録 |
 
 ```
+anthropics/claude-code-action@*,
 aquasecurity/trivy-action@*,
 docker/setup-buildx-action@*,
 docker/build-push-action@*,
 dorny/paths-filter@*,
+oven-sh/setup-bun@*,
 renovatebot/github-action@*
 ```
 
 ※ 各リポジトリが新しい外部 action を使う場合はこのリストへの追加が必要(SHA ピン留めは各ワークフロー側で行う)。<br/>
+※ `oven-sh/setup-bun` は `anthropics/claude-code-action`(「4.」)が内部で使用する action のため併せて許可する。<br/>
 ※ `actions/create-github-app-token` は「Allow actions created by GitHub」で許可済みのため個別登録は不要。
 
 </details>
@@ -413,5 +417,102 @@ renovatebot/github-action@*
 
 - `permissions:` を明示しているワークフロー(本リポジトリのものを含む)には影響しない
 - 「create and approve pull requests」を無効化することで、`GITHUB_TOKEN` による自己承認で 2.2 / 2.5 / 2.6 の承認必須化が迂回されるのを防ぐ
+
+</details>
+
+---
+## 4. 🧠 Claude Code レビュー
+
+PR のコメントで Claude Code にレビューさせる。実体は本リポジトリの reusable workflow(`.github/workflows/claude-code-review.yml` / `claude-security-review.yml`)で、各リポジトリには呼び出し側ファイルだけを置く。
+
+<details><summary><b>4.1 組織シークレットを登録する</b></summary>
+
+🔗 Organization → Settings → Secrets and variables → Actions → **New organization secret**
+
+| Name | 値 |
+|:-----|:--|
+| `CLAUDE_CODE_OAUTH_TOKEN` | `claude setup-token` で発行した OAuth トークン(Pro / Max プラン) |
+| `ANTHROPIC_API_KEY` | Anthropic API キー |
+
+- **どちらか一方のみ**登録する(両方あると実行時に警告が出る)
+- Repository access は `All repositories` か `Private repositories`。対象リポジトリから参照できないとレビューは「🔑 認証情報の確認」で失敗し、PR コメントで通知される
+
+</details>
+
+<details><summary><b>4.2 Claude GitHub App をインストールする</b></summary>
+
+https://github.com/apps/claude を Organization にインストールし、Repository access を `All repositories` にする(新規リポジトリも自動で対象)。
+action はこの App のトークンで進捗コメントやインラインコメントを投稿する。
+
+</details>
+
+<details><summary><b>4.3 各リポジトリに呼び出し側ファイルを置く</b></summary>
+
+呼び出し側ワークフロー `.github/workflows/claude.yml` は [claude-plugins](https://github.com/theindiehacker/claude-plugins) で配布する。仕様は以下のとおり(claude-plugins 側の参照仕様):
+
+```yaml
+name: "🧠 Claude"
+
+on:
+  issue_comment:
+    types: [created]
+
+# write は reusable workflow 側の job にのみ与える(ここで与えた permissions が上限になる)
+permissions: {}
+
+jobs:
+  code-review:
+    # 無関係な issue_comment で run を作らないよう呼び出し側でも絞る(reusable 側の条件を緩めるものではなく、狭めるだけ)
+    if: github.event.issue.pull_request && startsWith(github.event.comment.body, '/') && github.event.comment.user.type != 'Bot'
+    # 本リポジトリの Release の SHA に固定する(タグ参照のままだと zizmor / ghalint の必須ワークフローで落ちる)
+    uses: theindiehacker/github-workflows/.github/workflows/claude-code-review.yml@<sha>  # vX.Y.Z
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    # secrets: inherit は使わない(ghalint deny_inherit_secrets)。組織シークレットをこの名前で登録する
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+  security-review:
+    if: github.event.issue.pull_request && startsWith(github.event.comment.body, '/') && github.event.comment.user.type != 'Bot'
+    uses: theindiehacker/github-workflows/.github/workflows/claude-security-review.yml@<sha>  # vX.Y.Z
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
+- 呼び出し側の PR も通常どおり必須ワークフローの対象になる
+
+</details>
+
+<details><summary><b>4.4 使い方</b></summary>
+
+open な PR に以下をコメントする(OWNER / MEMBER / COLLABORATOR のみ。Bot のコメントは無視される):
+
+| コメント | 動作 |
+|:--------|:----|
+| `/code-review` | コードレビュー |
+| `/code-review fable` | コードレビュー(モデルを fable に切り替え) |
+| `/security-review` | セキュリティレビュー |
+
+結果は進捗コメント(`判定:` で始まる結論)とインラインコメントに残る。完了できなかった場合は PR コメントで通知される。
+
+</details>
+
+<details><summary><b>4.5 更新の流れ</b></summary>
+
+1. 本リポジトリの `.github/workflows/claude-*.yml` を PR で変更する(security チームの承認が必要: 2.6)
+2. `main` にマージ後、GitHub Releases で `vX.Y.Z` タグを作成する
+3. Renovate が各リポジトリの `.github/workflows/claude.yml` の `uses:` を新しい SHA に更新する PR を作るので、承認してマージする
+
+呼び出し側は SHA 固定のため、Renovate の PR をマージするまで各リポジトリには反映されない。
 
 </details>
