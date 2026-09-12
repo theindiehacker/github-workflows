@@ -12,6 +12,7 @@ name: "🏗️ terraform fmt"
 # validate は provider のバイナリを起動する。他の必須ワークフロー（tflint / shellcheck / trivy 等）は
 # いずれも対象 repo のコードを実行しない解析に揃えてあり、全 PR に強制される場所へコード実行を
 # 持ち込まないための線引き。terraform fmt は init 不要の構文整形のためこの線の内側に入る。
+# 唯一の例外は py-check.yml で、型検査に必要な依存導入（uv sync）を明示的に許容している（理由は同ファイル冒頭）。
 #
 # 検査対象は terraform fmt が扱う HCL のみ（*.tf / *.tfvars / *.tftest.hcl）。
 # JSON 構文（*.tf.json / *.tfvars.json）は terraform fmt の対象外のため含めない。
