@@ -6,7 +6,7 @@
       "customType": "regex",
       "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.yml$/"],
       "matchStrings": [
-        "# renovate: datasource=(?<datasource>[a-zA-Z0-9-._]+?) depName=(?<depName>[^\\s]+?)\\s+VERSION:\\s*(?<currentValue>\\S+)\\s+SHA256:\\s*(?<currentDigest>\\S+)"
+        "# renovate: datasource=(?<datasource>[a-zA-Z0-9-._]+?) depName=(?<depName>[^\\s]+?)\\s+(?:[A-Z0-9_]+_)?VERSION:\\s*(?<currentValue>\\S+)\\s+(?:[A-Z0-9_]+_)?SHA256:\\s*(?<currentDigest>\\S+)"
       ],
       "versioningTemplate": "semver",
       "extractVersionTemplate": "^v(?<version>.*)$"
@@ -16,7 +16,7 @@
       "customType": "regex",
       "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.yml$/"],
       "matchStrings": [
-        "# renovate: datasource=(?<datasource>[a-zA-Z0-9-._]+?) depName=(?<depName>[^\\s]+?) extractVersion=(?<extractVersion>\\S+)\\s+VERSION:\\s*(?<currentValue>\\S+)\\s+SHA256:\\s*(?<currentDigest>\\S+)"
+        "# renovate: datasource=(?<datasource>[a-zA-Z0-9-._]+?) depName=(?<depName>[^\\s]+?) extractVersion=(?<extractVersion>\\S+)\\s+(?:[A-Z0-9_]+_)?VERSION:\\s*(?<currentValue>\\S+)\\s+(?:[A-Z0-9_]+_)?SHA256:\\s*(?<currentDigest>\\S+)"
       ],
       "versioningTemplate": "semver"
     },
