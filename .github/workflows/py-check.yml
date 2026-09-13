@@ -1,33 +1,8 @@
 name: "🐍 py-check"
 
-# Python を ruff（lint + format）/ mypy（型検査）/ import-linter（依存関係の契約）/ deptry（不要・未宣言パッケージ）で検査する。
-#
-# ⚠️ 必須ワークフローは on: のフィルタ（paths / branches / types 等）が無視され全 PR で起動されるため、
-#    「Python 関連ファイルが変更されたか」の判定は本ワークフロー内で行う。
-#    対象ファイルの変更がない PR では検査を skip し、run 全体は success になる
-#    （ルールセットが All repositories 適用のため、Python 未使用の repo でも合格できる必要がある）。
-#
-# ⚠️ 本ワークフローは対象 repo の依存を uv.lock に従って導入する（uv sync）。
-#    mypy が third-party の型を参照し、deptry が import 名とパッケージ名を対応付けるには導入済みの環境が必要なため。
-#    build backend 等の対象 repo 側コードが動く点で、terraform-fmt.yml が引いた
-#    「必須ワークフローは対象 repo のコードを実行しない」線の明示的な例外。
-#    token は contents: read のみ・persist-credentials: false のため、影響は runner 内に閉じる。
-#
-# 各ツールが動く条件:
-#   ruff          常に動く（repo の環境に依存しない）
-#   lint-imports  契約の設定がある repo で動く（依存導入済みなら repo の環境、それ以外は中央の Python で解決する）
-#   mypy / deptry uv.lock があり uv sync（既定 group のみ）が成功した repo でのみ動く。依存未導入のまま mypy を動かすと
-#                 third-party の型が欠け、warn_unused_ignores 等の設定と噛み合わずローカルで再現しない誤検知が出るため、
-#                 uv.lock が無い repo や sync に失敗した repo は skip する（skip は warning で知らせる）。
-#                 中央固定版をその環境に載せられない場合も skip する（ツールごとに解決を試して判定する）
-#
-# ⚠️ uv.lock / mypy・import-linter・deptry の設定はリポジトリ直下のものだけを見る。
-#    backend/uv.lock のようなモノレポでは mypy / deptry が動かないため、その旨を warning で知らせる。
-#
-# ツール版は対象 repo の宣言を読まず中央で固定する（terraform-fmt.yml と同じ理由）。
-# repo の環境が必要なツールは uv run --with で中央固定版を対象 repo の環境に重ねて起動する
-# （repo 側が別の版を lock していても中央固定版が優先される）。
+# Python を ruff（lint + format）/ mypy（型）/ import-linter（依存関係の契約）/ deptry（不要・未宣言パッケージ）で検査する。
 on:
+  # 必須ワークフローは on: のフィルタが無視され全 PR で起動するため、対象の判定は job 内で行う
   pull_request:
     types: [opened, synchronize, reopened]
 
@@ -46,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      # 各ツールの中央固定版。2 桁の版（2.10 等）が YAML の float に化けないよう引用符で囲む
+      # ツール版は対象 repo の宣言を読まず中央で固定する（2 桁の版が float に化けないよう引用符で囲む）
       # renovate: datasource=pypi depName=ruff
       RUFF_VERSION: "0.16.7"
       # renovate: datasource=pypi depName=mypy
@@ -57,8 +32,7 @@ jobs:
       DEPTRY_VERSION: "0.25.1"
       # repo の環境に依存しないツール（ruff / 依存未導入時の lint-imports）を動かす Python
       TOOLS_PYTHON: "3.12"
-      # uv 本体。キャッシュキーからも参照するため job の env に置く（tag は v 接頭辞を持たないため
-      # renovate.json の「v 無し tag」用 manager で扱う）。3 桁の版は引用符なしでも文字列になる
+      # uv 本体。キャッシュキーからも参照するため job の env に置く（tag に v が無いので extractVersion で上書き）
       # renovate: datasource=github-release-attachments depName=astral-sh/uv extractVersion=^(?<version>.*)$
       UV_VERSION: 0.12.13
       UV_SHA256: 745765a3b6e360ad76743599ae5c42e9278c7edf8bbff9fc76d05bf2623a04dd
@@ -68,13 +42,8 @@ jobs:
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d  # v4.0.3
         with:
           list-files: json
-          # 削除ファイルは検査できないため対象外（rename は added + deleted に分解され新パス側が対象になる）
-          # ruff_config: ruff 専用の設定ファイル。変更時は ruff を repo 全体に掛ける
-          #   （pyproject.toml は依存追加や version bump でも変わるため含めない。含めると Renovate の
-          #    依存更新 PR が、その PR の触っていない既存の違反で落ちる）
-          # other_config: repo 全体の検査結果に影響するがファイル単位の再検査は不要な設定
-          #   （mypy / import-linter / deptry は常に repo 全体が対象）
-          # python: ruff に渡す変更ファイル
+          # 削除ファイルは検査できないため対象外（rename は added + deleted に分解され新パス側が対象になる）。
+          # ruff_config は ruff 専用の設定のみ（pyproject.toml を含めると依存 bump の PR が既存の違反で落ちる）
           filters: |
             ruff_config:
               - added|modified|copied: "**/ruff.toml"
@@ -114,16 +83,11 @@ jobs:
           rm -f "$ARCHIVE"
           uv --version
 
-      # 以降の step は !cancelled() で暗黙の success() を外し、前段の検査が fail しても動かす
-      # （4 ツール分の annotation を 1 回の run で出す）。依存する step の outcome だけを条件にする
+      # 以降の step は !cancelled() で暗黙の success() を外し、前段が fail しても 4 ツール分の annotation を 1 run で出す
 
       - name: "uv のキャッシュを復元"
-        # 依存の wheel とツールの使い捨て環境を PR をまたいで再利用する。
-        # actions/cache は post-if: success() のため fail した run では保存されず、lint が fail する run こそ
-        # キャッシュが要るので restore / save に分け、save は末尾で !cancelled() として動かす。
-        # キーには中央で決まる要素（uv 本体・ツール版・ツール用 Python）をすべて含める。含めないものを
-        # 中央で上げると、対象 repo の uv.lock が変わらない限りキーが同一のままで完全一致が続き、
-        # 新しい成果物が永久に保存されない
+        # fail した run でも保存できるよう restore / save に分ける（actions/cache は post-if: success()）。
+        # キーは中央で決まる要素をすべて含める（含めないものを上げるとキーが変わらず新しい成果物が保存されない）
         id: restore
         if: ${{ !cancelled() && steps.uv.outcome == 'success' }}
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
@@ -146,8 +110,7 @@ jobs:
           # repo の環境（.venv）に依存しないため、中央の Python 上の使い捨て環境で動かす
           ruff=(uv tool run --python "${TOOLS_PYTHON}" --from "ruff==${RUFF_VERSION}" ruff)
 
-          # ruff 専用の設定が変わったときだけ repo 全体、それ以外は変更ファイルのみ
-          # （--force-exclude で repo 側の exclude 設定を尊重する）
+          # ruff 専用の設定が変わったときだけ repo 全体（--force-exclude で repo 側の exclude を尊重）
           targets=(.)
           if [ "${SCAN_ALL}" != "true" ]; then
             targets=()
@@ -160,11 +123,9 @@ jobs:
             exit 0
           fi
 
-          # --output-format=github: 検出箇所を PR に annotation 表示する。ruff は file= を絶対パスで出すため
-          # repo ルート相対に直して他ツールと揃える（runner も workspace 配下の絶対パスは相対化するが、ログの見た目も揃える）
+          # ruff は file= を絶対パスで出すため、他ツールと揃えて repo ルート相対に直す
           relativize() { sed -e "s#file=${GITHUB_WORKSPACE}/#file=#"; }
-          # ruff の exit code は 1 が違反の検出、2 以上が実行そのものの失敗（設定の構文エラー・未知のルール名等）。
-          # 後者は annotation が 1 件も出ないため、理由を PR に表示する
+          # exit code 1 は違反の検出、2 以上は実行そのものの失敗（後者は annotation が出ないため理由を表示する）
           status=0
           code=0
           "${ruff[@]}" check --no-fix --force-exclude --output-format=github "${targets[@]}" | relativize || code="${PIPESTATUS[0]}"
@@ -187,6 +148,8 @@ jobs:
           exit "${status}"
 
       - name: "依存関係を導入"
+        # mypy / deptry は導入済みの環境を要するため uv.lock に従って導入する（対象 repo のコードが動く唯一の step）。
+        # uv.lock と各ツールの設定はリポジトリ直下のみ参照する（モノレポでは mypy / deptry が動かない）
         id: deps
         if: ${{ !cancelled() && steps.uv.outcome == 'success' }}
         shell: bash
@@ -201,18 +164,14 @@ jobs:
             } >> "${GITHUB_OUTPUT}"
           }
 
+          # 検査が静かに減ることが運用側から見えるよう notice ではなく warning にする
           if [ ! -f uv.lock ]; then
-            # 検査が静かに減ることが運用側から見えるよう notice ではなく warning にする
-            # （モノレポで backend/uv.lock のように置いている repo もここに来る）
             echo "::warning::リポジトリ直下に uv.lock が無いため mypy / deptry は実行されません（ruff / lint-imports は動きます）"
             skip_all
             exit 0
           fi
 
-          # --frozen: lock をそのまま使う（pyproject.toml との乖離は検査対象外）。
-          # 導入するのは既定の group（通常 dev）まで。全 extra / 全 group を入れると、private index や GPU 系 wheel を
-          # 要する extra が 1 つあるだけで無関係な PR まで塞いでしまう。型スタブは dev group に置くか、
-          # repo 側の [tool.uv] default-groups で指定する。sync 自体の失敗も同じ理由でブロックせず縮退する
+          # 既定の group までにとどめる（全 extra / 全 group だと解決できない extra 1 つで無関係な PR まで塞ぐ）
           if ! uv sync --frozen; then
             echo "::warning::uv sync に失敗したため mypy / deptry は実行されません。uv.lock と index の設定を確認してください"
             skip_all
@@ -220,10 +179,7 @@ jobs:
           fi
           echo "installed=true" >> "${GITHUB_OUTPUT}"
 
-          # 中央固定版のツールは repo の環境（.venv）に uv run --with で重ねるため、その Python がツールの
-          # requires-python を満たさないと解決に失敗する。満たすかどうかを版の比較で宣言するとツールの bump に
-          # 追随できないため、実際に解決を試して判定する。まとめて 1 つの環境に解決するとツール同士の依存衝突で
-          # 巻き添えになるため、ツールごとに独立して試す
+          # 中央固定版を repo の環境に載せられるかは、版の比較ではなく実際の解決で判定する（ツールごとに独立して試す）
           probe() {
             if uv run --no-sync --with "$1" python -c '' > /dev/null 2>&1; then
               echo "$2=true" >> "${GITHUB_OUTPUT}"
@@ -249,13 +205,10 @@ jobs:
             exit 0
           fi
 
-          # app project（[build-system] 無し）では uv sync が自プロジェクトを venv に入れないため、
-          # src レイアウトでは mypy の module 探索に src を足す（mypy は PYTHONPATH を見ない）
+          # app project は uv sync が自プロジェクトを venv に入れないため src を足す（mypy は PYTHONPATH を見ない）
           if [ -d src ]; then export MYPYPATH="${PWD}/src${MYPYPATH:+:${MYPYPATH}}"; fi
 
-          # 型検査は変更ファイルだけでは成立しない（import 先の型が結果を変える）ため、常に repo 全体を対象にする。
-          # 対象の指定は mypy 自身に任せる。設定（files / packages / modules）が対象を宣言していればそれが使われ、
-          # 宣言が無いときだけ mypy が「対象が無い」と言ってくるので "." を付けて再実行する
+          # 対象の指定は mypy 自身に任せ、設定に宣言が無いときだけ "." を付けて再実行する
           result="${RUNNER_TEMP}/mypy.jsonl"
           errors="${RUNNER_TEMP}/mypy.stderr"
           run_mypy() {
@@ -271,21 +224,19 @@ jobs:
           fi
           cat "${errors}"
 
+          # 検出結果を書く前に終了した場合。検査対象が無いだけなら skip、それ以外は理由を PR に表示する
           if [ "${status}" -ne 0 ] && [ ! -s "${result}" ]; then
-            # 検出結果を書く前に終了した場合。走査範囲（隠しディレクトリ等を除く）に .py が無いだけなら検査対象なしとして
-            # skip し、それ以外（設定の誤り・パッケージが見つからない等）は PR に表示する。
-            # stderr には uv 自身の warning も混ざるため、理由の抽出では除く
             if grep -qF "There are no .py[i] files in directory" "${errors}"; then
               echo "::notice::mypy: 走査範囲（隠しディレクトリ等を除く）に .py が無いため skip"
               exit 0
             fi
+            # stderr には uv 自身の warning も混ざるため理由の抽出では除く
             reason=$({ grep -vE '^warning:' "${errors}" || true; } | { grep -vE '^[[:space:]]*$' || true; } | tail -n 1)
             echo "::error::mypy: 実行に失敗しました: ${reason:-ログを確認してください}"
             exit "${status}"
           fi
 
-          # 検出箇所を PR に annotation 表示する。column は 0 始まりのため +1、ファイル単位のエラーは line が -1 で来るため省く。
-          # hint には対処方法が入る（複数行のため %0A でエスケープして続ける）
+          # column は 0 始まりのため +1、ファイル単位のエラーは line が -1 で来るため省く。hint には対処方法が入る
           echo "::group::mypy 出力（JSON Lines）"
           cat "${result}"
           echo "::endgroup::"
@@ -302,18 +253,16 @@ jobs:
           COLUMNS: "200"  # 非 TTY では 80 桁で折り返され、長い契約名と BROKEN が別行に割れるため広げる
         run: |
           set -euo pipefail
-          # import-linter の設定探索と同じ場所（setup.cfg / .importlinter の [importlinter]、pyproject.toml の [tool.importlinter]）
-          # に契約が無ければ検査しない（契約は repo ごとの任意設定）
+          # 契約は repo ごとの任意設定のため、import-linter の設定探索と同じ場所に無ければ検査しない
           if ! { grep -qsE '^\[importlinter\]' setup.cfg .importlinter || grep -qsE '^\[tool\.importlinter\]' pyproject.toml; }; then
             echo "::notice::import-linter の設定（[importlinter] / [tool.importlinter]）が無いため skip"
             exit 0
           fi
 
+          # 依存導入済みなら repo の環境に重ね、そうでなければ中央の Python で動かす
           if [ "${TOOL_SUPPORTED}" = "true" ]; then
-            # 依存導入済みなら repo の環境に重ねる
             lint_imports=(uv run --no-sync --with "import-linter==${IMPORT_LINTER_VERSION}" lint-imports)
           else
-            # 依存未導入（または中央固定版を載せられない）なら中央の Python で動かす
             lint_imports=(uv tool run --python "${TOOLS_PYTHON}" --from "import-linter==${IMPORT_LINTER_VERSION}" lint-imports)
           fi
 
@@ -325,9 +274,7 @@ jobs:
           status=0
           run_lint_imports || status="${PIPESTATUS[0]}"
 
-          # PYTHONPATH に足したパスは stdlib / site-packages より前に入り、同名のモジュールを shadow するため、
-          # 自パッケージを import できなかったときだけ最小限を足して再実行する
-          # （app project は uv sync が自プロジェクトを venv に入れないため、この経路に来る）
+          # PYTHONPATH は stdlib / site-packages より前に入り同名モジュールを shadow するため、必要なときだけ足す
           if [ "${status}" -ne 0 ] && grep -qsF "Could not find package" "${log}" "${errors}"; then
             if [ -d src ]; then
               export PYTHONPATH="${PWD}/src${PYTHONPATH:+:${PYTHONPATH}}"
@@ -340,8 +287,7 @@ jobs:
           fi
           cat "${errors}"
 
-          # 違反箇所（Broken contracts の「- <import 元> -> <import 先> (l.<行>)」）を PR に annotation 表示する。
-          # モジュール名からファイルを引き当て、他ツールと同じく差分に紐づく形にする
+          # 違反箇所（Broken contracts の「- <import 元> -> <import 先> (l.<行>)」）をファイル・行に紐づけて表示する
           resolve() {
             local module="${1}" rel base
             rel="${module//.//}"
@@ -362,8 +308,7 @@ jobs:
             fi
           done < <({ grep -E '^- [^ ]+ -> [^ ]+ \(l\.[0-9]+\)$' "${log}" || true; } | sort -u)
 
-          # 契約単位でも 1 件出す（違反箇所を持たない契約もあるため）。
-          # 結果行は「<契約名> BROKEN」で、設定により「 (N ignored imports, M warnings)」「 [0.001s]」が後ろに付く
+          # 契約単位でも 1 件出す（違反箇所を持たない契約もあるため。結果行には (N ignored imports) 等が後ろに付く）
           { grep -E ' BROKEN([[:space:]]|$)' "${log}" || true; } | sed -E 's/ BROKEN([[:space:]].*)?$//' | while IFS= read -r contract; do
             echo "::error::import-linter: 契約「${contract}」が破られています（詳細はログの Broken contracts）"
           done
@@ -387,10 +332,8 @@ jobs:
             exit 0
           fi
 
-          # src レイアウトでは自パッケージが import 名として解決できず transitive dependency（DEP003）と誤検知される。
-          # root に src を足すと src 配下を二重に走査するため、パッケージ名を known-first-party として渡す。
-          # deptry 既定の除外（tests 等）は cwd 相対の前方一致のため src/tests は除外されない。
-          # 他のレイアウトや除外は repo 側の [tool.deptry]（known_first_party / extend_exclude）で調整する
+          # src レイアウトの自パッケージが DEP003 と誤検知されるのを、root を足さず known-first-party で解消する
+          # （他のレイアウトや除外は repo 側の [tool.deptry] で調整する）
           args=()
           if [ -d src ]; then
             while IFS= read -r pkg; do
@@ -403,7 +346,6 @@ jobs:
           status=0
           uv run --no-sync --with "deptry==${DEPTRY_VERSION}" deptry . "${args[@]}" --json-output "${result}" || status=$?
 
-          # 検出箇所を PR に annotation 表示する（pyproject.toml 起因の検出は行番号を持たない）。
           # deptry は検出 0 件でも [] を書くため、ファイルの有無ではなく中身で判定する
           if jq -e 'length > 0' "${result}" > /dev/null 2>&1; then
             jq -r '.[]
@@ -416,9 +358,7 @@ jobs:
           exit "${status}"
 
       - name: "uv のキャッシュを保存"
-        # 完全一致で復元できた run では保存し直さない（内容が同じため）。
-        # uv cache prune --ci は uv tool run の使い捨て環境に必要な成果物まで落とし、毎 PR で動く ruff が
-        # 毎回 PyPI から取り直しになるため実行しない
+        # 完全一致で復元できた run では保存し直さない。uv cache prune --ci はツールの使い捨て環境を壊すため使わない
         if: ${{ !cancelled() && steps.restore.outcome == 'success' && steps.restore.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:

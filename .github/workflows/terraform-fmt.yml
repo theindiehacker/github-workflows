@@ -1,22 +1,8 @@
 name: "🏗️ terraform fmt"
 
-# Terraform の定義ファイルの書式を terraform fmt で検査する。
-#
-# ⚠️ 必須ワークフローは on: のフィルタ（paths / branches / types 等）が無視され全 PR で起動されるため、
-#    「Terraform 関連ファイルが変更されたか」の判定は本ワークフロー内で行う。
-#    対象ファイルの変更がない PR では検査を skip し、run 全体は success になる
-#    （ルールセットが All repositories 適用のため、Terraform 未使用の repo でも合格できる必要がある）。
-#
-# terraform validate / terraform test は本ワークフローに含めず、必要な repo が自前のワークフローで実行する。
-# どちらも terraform init を必要とし、init は .tf が宣言した任意の module source を取得し、
-# validate は provider のバイナリを起動する。他の必須ワークフロー（tflint / shellcheck / trivy 等）は
-# いずれも対象 repo のコードを実行しない解析に揃えてあり、全 PR に強制される場所へコード実行を
-# 持ち込まないための線引き。terraform fmt は init 不要の構文整形のためこの線の内側に入る。
-# 唯一の例外は py-check.yml で、型検査に必要な依存導入（uv sync）を明示的に許容している（理由は同ファイル冒頭）。
-#
-# 検査対象は terraform fmt が扱う HCL のみ（*.tf / *.tfvars / *.tftest.hcl）。
-# JSON 構文（*.tf.json / *.tfvars.json）は terraform fmt の対象外のため含めない。
+# Terraform の書式を terraform fmt で検査する（init が要る validate / test は含めない）。
 on:
+  # 必須ワークフローは on: のフィルタが無視され全 PR で起動するため、対象の判定は job 内で行う
   pull_request:
     types: [opened, synchronize, reopened]
 

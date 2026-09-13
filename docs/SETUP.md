@@ -306,7 +306,7 @@ File patterns:
 
 <details><summary><b>「✏️ スタイルチェック」</b></summary>
 
-> ワークフロー定義の構文チェック(actionlint)、Terraform の lint(tflint)と書式(terraform fmt)、シェルスクリプトの lint(shellcheck)、Python の lint・書式(ruff)と依存関係の契約(import-linter)、`uv.lock` のある repo では型(mypy)と不要パッケージ(deptry)のチェック(py-check)を必須化するルール。セキュリティ検知(2.3〜2.6)とは性質が異なるため別ルールセットで管理する
+> コードのスタイルチェックを必須化するルール。セキュリティ検知(2.3〜2.6)とは性質が異なるため別ルールセットで管理する
 
 | 設定項目 | 値                        |
 |:-------:|:-------------------------|
@@ -325,13 +325,13 @@ Rules セクションで以下のチェックを外す:
 
 - ✅ **Require workflows to pass before merging** (PRマージ前に指定したワークフローの成功を必須にする) — 「Add workflow」から以下を追加:
 
-| Repository | Branch | Workflow |
-|:-----------|:-------|:---------|
-| `github-workflows` | `main` | `.github/workflows/actionlint.yml` |
-| `github-workflows` | `main` | `.github/workflows/tflint.yml` |
-| `github-workflows` | `main` | `.github/workflows/terraform-fmt.yml` |
-| `github-workflows` | `main` | `.github/workflows/shellcheck.yml` |
-| `github-workflows` | `main` | `.github/workflows/py-check.yml` |
+| Repository | Branch | Workflow | 検査内容 |
+|:-----------|:-------|:---------|:--------|
+| `github-workflows` | `main` | `.github/workflows/actionlint.yml` | ワークフロー定義の構文 |
+| `github-workflows` | `main` | `.github/workflows/tflint.yml` | Terraform の lint |
+| `github-workflows` | `main` | `.github/workflows/terraform-fmt.yml` | Terraform の書式 |
+| `github-workflows` | `main` | `.github/workflows/shellcheck.yml` | シェルスクリプトの lint |
+| `github-workflows` | `main` | `.github/workflows/py-check.yml` | Python の lint・書式・型・依存関係(型と依存関係は `uv.lock` のある repo のみ) |
 
 - ✅ **Do not require workflows on creation**
 
