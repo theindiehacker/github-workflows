@@ -12,15 +12,6 @@
       "extractVersionTemplate": "^v(?<version>.*)$"
     },
     {
-      "description": "同上だが tag が v 始まりでないツール用。行末に extractVersion=... を書いた行だけが対象（上の manager の regex はその行にマッチしない）。extractVersionTemplate を置くとキャプチャより優先されて効かなくなるため置かない",
-      "customType": "regex",
-      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.yml$/"],
-      "matchStrings": [
-        "# renovate: datasource=(?<datasource>[a-zA-Z0-9-._]+?) depName=(?<depName>[^\\s]+?) extractVersion=(?<extractVersion>\\S+)\\s+(?:[A-Z0-9_]+_)?VERSION:\\s*\"?(?<currentValue>[^\\s\"]+)\"?\\s+(?:[A-Z0-9_]+_)?SHA256:\\s*(?<currentDigest>\\S+)"
-      ],
-      "versioningTemplate": "semver"
-    },
-    {
       "description": "Python ツール導入 step の <TOOL>_VERSION を PyPI の最新版に更新する（datasource=pypi のブロックのみ対象、SHA256 は無い）",
       "customType": "regex",
       "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.yml$/"],

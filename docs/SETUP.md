@@ -331,7 +331,7 @@ Rules セクションで以下のチェックを外す:
 | `github-workflows` | `main` | `.github/workflows/tflint.yml` | Terraform の lint |
 | `github-workflows` | `main` | `.github/workflows/terraform-fmt.yml` | Terraform の書式 |
 | `github-workflows` | `main` | `.github/workflows/shellcheck.yml` | シェルスクリプトの lint |
-| `github-workflows` | `main` | `.github/workflows/py-check.yml` | Python の lint・書式・型・依存関係(型と依存関係は `uv.lock` のある repo のみ) |
+| `github-workflows` | `main` | `.github/workflows/py-check.yml` | Python の規約(uv での依存管理)・lint・書式・型・依存関係(型と依存関係は `uv.lock` のあるディレクトリごと) |
 
 - ✅ **Do not require workflows on creation**
 

@@ -1,393 +1,234 @@
 name: "🐍 py-check"
 
-# Python を ruff（lint + format）/ mypy（型）/ import-linter（依存関係の契約）/ deptry（不要・未宣言パッケージ）で検査する。
 on:
-  # 必須ワークフローは on: のフィルタが無視され全 PR で起動するため、対象の判定は job 内で行う
   pull_request:
     types: [opened, synchronize, reopened]
 
-permissions:
-  contents: read
-  pull-requests: read  # paths-filter の変更ファイル一覧取得に必要
+permissions: {}
 
 # 同一 PR に連投された run のみ束ねて追い越しキャンセル
 concurrency:
   group: py-check-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
+env:
+  # ツール版は対象 repo の宣言を読まず中央で固定する（2 桁の版が float に化けないよう引用符で囲む）
+  # renovate: datasource=pypi depName=uv
+  UV_VERSION: "0.12.13"
+  # renovate: datasource=pypi depName=ruff
+  RUFF_VERSION: "0.16.7"
+  # renovate: datasource=pypi depName=mypy
+  MYPY_VERSION: "2.3.1"
+  # renovate: datasource=pypi depName=import-linter
+  IMPORT_LINTER_VERSION: "2.15"
+  # renovate: datasource=pypi depName=deptry
+  DEPTRY_VERSION: "0.25.1"
+
 jobs:
-  check:
-    name: "Python を検査"
+  detect:
+    name: "検査対象を検出"
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      # ツール版は対象 repo の宣言を読まず中央で固定する（2 桁の版が float に化けないよう引用符で囲む）
-      # renovate: datasource=pypi depName=ruff
-      RUFF_VERSION: "0.16.7"
-      # renovate: datasource=pypi depName=mypy
-      MYPY_VERSION: "2.3.1"
-      # renovate: datasource=pypi depName=import-linter
-      IMPORT_LINTER_VERSION: "2.15"
-      # renovate: datasource=pypi depName=deptry
-      DEPTRY_VERSION: "0.25.1"
-      # repo の環境に依存しないツール（ruff / 依存未導入時の lint-imports）を動かす Python
-      TOOLS_PYTHON: "3.12"
-      # uv 本体。キャッシュキーからも参照するため job の env に置く（tag に v が無いので extractVersion で上書き）
-      # renovate: datasource=github-release-attachments depName=astral-sh/uv extractVersion=^(?<version>.*)$
-      UV_VERSION: "0.12.13"
-      UV_SHA256: 745765a3b6e360ad76743599ae5c42e9278c7edf8bbff9fc76d05bf2623a04dd
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read  # paths-filter の変更ファイル一覧取得に必要
+    outputs:
+      python: ${{ steps.filter.outputs.python }}
+      # uv.lock のあるディレクトリの JSON 配列（例: [".", "backend"]）
+      projects: ${{ steps.projects.outputs.projects || '[]' }}
     steps:
-      - name: "検査対象を判定"
+      - name: "検査の要否を判定"
         id: filter
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d  # v4.0.3
         with:
-          list-files: json
-          # 削除ファイルは検査できないため対象外（rename は added + deleted に分解され新パス側が対象になる）。
-          # ruff_config は ruff 専用の設定のみ（pyproject.toml を含めると依存 bump の PR が既存の違反で落ちる）
+          # 削除も対象（削除したモジュールを import する側や、設定の削除で結果が変わる）
           filters: |
-            ruff_config:
-              - added|modified|copied: "**/ruff.toml"
-              - added|modified|copied: "**/.ruff.toml"
-            other_config:
-              - added|modified|copied: "**/pyproject.toml"
-              - added|modified|copied: "mypy.ini"
-              - added|modified|copied: ".mypy.ini"
-              - added|modified|copied: "setup.cfg"
-              - added|modified|copied: ".importlinter"
-              - added|modified|copied: "uv.lock"
-              - added|modified|copied: ".python-version"
             python:
-              - added|modified|copied: "**/*.py"
-              - added|modified|copied: "**/*.pyi"
+              - "**/*.py"
+              - "**/*.pyi"
+              - "**/ruff.toml"
+              - "**/.ruff.toml"
+              - "**/pyproject.toml"
+              - "**/mypy.ini"
+              - "**/.mypy.ini"
+              - "**/setup.cfg"
+              - "**/.importlinter"
+              - "**/uv.lock"
+              - "**/.python-version"
+              - "**/requirements*.txt"
+              - "**/Pipfile"
+              - "**/Pipfile.lock"
+              - "**/poetry.lock"
+              - "**/pdm.lock"
 
-      # changes はマッチした filter 名の JSON 配列。個々の filter を OR で並べずに起動判定できる
       - name: "Checkout"
-        if: steps.filter.outputs.changes != '[]'
+        if: steps.filter.outputs.python == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
 
-      # TODO: 「curl → sha256sum -c → /usr/local/bin」の導入ブロックは 7 本目。
-      #       Renovate の regex と合わせて composite action に切り出す（別 PR）
+      - name: "uv.lock のあるディレクトリを列挙"
+        id: projects
+        if: steps.filter.outputs.python == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # -z でないと非 ASCII のパスが引用符付きでエスケープされる
+          projects=$(git ls-files -z -- ':(glob)**/uv.lock' | tr '\0' '\n' | sed -E 's#/?uv\.lock$##; s#^$#.#' | jq -Rnc '[inputs]')
+          echo "projects=${projects}" >> "${GITHUB_OUTPUT}"
+
+  rule:
+    name: "📜 規約を検査"
+    needs: detect
+    if: needs.detect.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # git 上のファイルだけを見る（対象 repo のコードは動かさない）。-z でないと非 ASCII のパスが引用符付きでエスケープされる
+
+      - name: "uv で依存を管理しているか"
+        run: |
+          set -euo pipefail
+          status=0
+          while IFS= read -r -d '' file; do
+            # uv export で書き出した requirements.txt は、依存管理ではなく配布用の成果物として許可する
+            if [[ "${file##*/}" == requirements*.txt ]] && head -n 1 "${file}" | grep -qF 'autogenerated by uv'; then continue; fi
+            echo "::error file=${file}::${file##*/} ではなく pyproject.toml と uv.lock で依存を管理してください（https://docs.astral.sh/uv/guides/migration/pip-to-project/）"
+            status=1
+          done < <(git ls-files -z -- ':(glob)**/requirements*.txt' ':(glob)**/setup.py' ':(glob)**/Pipfile' ':(glob)**/Pipfile.lock' ':(glob)**/poetry.lock' ':(glob)**/pdm.lock')
+          # workspace のメンバーは親ディレクトリ（ルート）の uv.lock を使う。lock が最新かは依存関係の導入時に uv が判定する
+          while IFS= read -r -d '' pyproject; do
+            dir=$(dirname "${pyproject}")
+            until [ -e "${dir}/uv.lock" ] || [ "${dir}" = . ]; do dir=$(dirname "${dir}"); done
+            if [ ! -e "${dir}/uv.lock" ]; then
+              echo "::error file=${pyproject}::uv.lock がありません。uv lock を実行して uv.lock をコミットしてください（https://docs.astral.sh/uv/concepts/projects/layout/#the-lockfile）"
+              status=1
+            fi
+          done < <(git grep -lzE '^\[(project|tool\.uv\.workspace)\]' -- ':(glob)**/pyproject.toml' || true)
+          exit "${status}"
+
+  ruff:
+    name: "✏️ ruff"
+    needs: detect
+    if: needs.detect.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: "Install uv"
         id: uv
-        if: steps.filter.outputs.changes != '[]'
-        shell: bash
-        run: |
-          set -euo pipefail
-          ARCHIVE="uv-x86_64-unknown-linux-gnu.tar.gz"
-          curl -sSfL -o "$ARCHIVE" "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/${ARCHIVE}"
-
-          # SHA-256 検証（改ざん・破損を検知）
-          echo "${UV_SHA256}  ${ARCHIVE}" | sha256sum -c -
-
-          sudo tar -xz -C /usr/local/bin --strip-components=1 -f "$ARCHIVE" uv-x86_64-unknown-linux-gnu/uv
-          rm -f "$ARCHIVE"
-          uv --version
-
-      # 以降の step は !cancelled() で暗黙の success() を外し、前段が fail しても 4 ツール分の annotation を 1 run で出す
-
-      - name: "uv のキャッシュを復元"
-        # fail した run でも保存できるよう restore / save に分ける（actions/cache は post-if: success()）。
-        # キーは中央で決まる要素をすべて含める（含めないものを上げるとキーが変わらず新しい成果物が保存されない）
-        id: restore
-        if: ${{ !cancelled() && steps.uv.outcome == 'success' }}
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
         with:
-          # managed Python は ~/.local/share/uv/python に展開されるためキャッシュ対象に含める
-          path: |
-            ~/.cache/uv
-            ~/.local/share/uv
-          key: py-check-uv${{ env.UV_VERSION }}-${{ runner.os }}-py${{ env.TOOLS_PYTHON }}-${{ env.RUFF_VERSION }}-${{ env.MYPY_VERSION }}-${{ env.IMPORT_LINTER_VERSION }}-${{ env.DEPTRY_VERSION }}-${{ hashFiles('uv.lock') }}
-          restore-keys: |
-            py-check-uv${{ env.UV_VERSION }}-${{ runner.os }}-py${{ env.TOOLS_PYTHON }}-${{ env.RUFF_VERSION }}-${{ env.MYPY_VERSION }}-${{ env.IMPORT_LINTER_VERSION }}-${{ env.DEPTRY_VERSION }}-
-            py-check-uv${{ env.UV_VERSION }}-${{ runner.os }}-
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
 
-      - name: "ruff"
-        # 依存を必要としないため uv sync の前に動かし、lint 違反だけの PR に早く結果を返す
+      - name: "ruff check"
+        shell: bash
+        run: uvx --python 3.12 "ruff@${RUFF_VERSION}" check --no-fix --output-format=github .
+
+      - name: "ruff format"
         if: ${{ !cancelled() && steps.uv.outcome == 'success' }}
         shell: bash
-        env:
-          SCAN_ALL: ${{ steps.filter.outputs.ruff_config }}
-          TARGETS: ${{ steps.filter.outputs.python_files }}
-        run: |
-          set -euo pipefail
-          # repo の環境（.venv）に依存しないため、中央の Python 上の使い捨て環境で動かす
-          ruff=(uv tool run --python "${TOOLS_PYTHON}" --from "ruff==${RUFF_VERSION}" ruff)
+        run: uvx --python 3.12 "ruff@${RUFF_VERSION}" format --check --diff .
 
-          # ruff 専用の設定が変わったときだけ repo 全体（--force-exclude で repo 側の exclude を尊重）
-          targets=(.)
-          if [ "${SCAN_ALL}" != "true" ]; then
-            targets=()
-            while IFS= read -r t; do
-              if [ -n "${t}" ]; then targets+=("${t}"); fi
-            done < <(jq -r '.[]' <<< "${TARGETS}")
-          fi
-          if [ "${#targets[@]}" -eq 0 ]; then
-            echo "::notice::ruff: 変更された Python ファイルが無いため skip"
-            exit 0
-          fi
+  project:
+    name: "🚧 型・依存関係を検査 (${{ matrix.project }})"
+    needs: detect
+    if: needs.detect.outputs.projects != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ${{ fromJSON(needs.detect.outputs.projects) }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ matrix.project }}
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
-          # ruff は file= を絶対パスで出すため、他ツールと揃えて repo ルート相対に直す
-          relativize() { sed -e "s#file=${GITHUB_WORKSPACE}/#file=#"; }
-          # exit code 1 は違反の検出、2 以上は実行そのものの失敗（後者は annotation が出ないため理由を表示する）
-          status=0
-          code=0
-          "${ruff[@]}" check --no-fix --force-exclude --output-format=github "${targets[@]}" | relativize || code="${PIPESTATUS[0]}"
-          if [ "${code}" -ge 2 ]; then
-            echo "::error::ruff: check の実行に失敗しました（設定を確認してください。詳細はログ）"
-          fi
-          if [ "${code}" -ne 0 ]; then status=1; fi
+      - name: "Install uv"
+        id: uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          working-directory: ${{ matrix.project }}
+          # キーが完全一致すると保存し直さないため、中央で固定する版をすべて含める
+          cache-suffix: py-check-${{ env.UV_VERSION }}-${{ env.MYPY_VERSION }}-${{ env.IMPORT_LINTER_VERSION }}-${{ env.DEPTRY_VERSION }}
 
-          code=0
-          "${ruff[@]}" format --check --force-exclude --output-format=github "${targets[@]}" | relativize || code="${PIPESTATUS[0]}"
-          if [ "${code}" -ge 2 ]; then
-            echo "::error::ruff: format の実行に失敗しました（設定を確認してください。詳細はログ）"
-          elif [ "${code}" -ne 0 ]; then
-            # 差分を log に出し、どう直せばよいかを CI 上で読めるようにする
-            echo "::group::ruff format --diff"
-            "${ruff[@]}" format --diff --force-exclude "${targets[@]}" || true
-            echo "::endgroup::"
-          fi
-          if [ "${code}" -ne 0 ]; then status=1; fi
-          exit "${status}"
+      - name: "uv.lock が pyproject.toml と一致しているか"
+        run: uv lock --check
 
-      - name: "依存関係を導入"
-        # mypy / deptry は導入済みの環境を要するため uv.lock に従って導入する（対象 repo のコードが動く唯一の step）。
+      # 以降の step は !cancelled() で暗黙の success() を外し、前段が fail しても 3 ツールの結果を 1 run で出す
+
+      - name: "🧰 依存関係を導入"
+        # mypy / import-linter / deptry は導入済みの環境を要するため uv.lock に従って導入する（対象 repo のコードが動く唯一の step）。
         # 他の必須ワークフローはコードを実行しない解析に揃えてあり、ここがその線引きの唯一の例外
-        # （型と依存関係の検査は third-party の実体を要するため。token は contents: read のみ・credentials も残さない）。
-        # uv.lock と各ツールの設定はリポジトリ直下のみ参照する（モノレポでは mypy / deptry が動かない）
+        # （型と依存関係の検査は third-party の実体を要するため。token は contents: read のみ・credentials も残さない）
         id: deps
         if: ${{ !cancelled() && steps.uv.outcome == 'success' }}
-        shell: bash
+        continue-on-error: true
         run: |
-          set -euo pipefail
-          skip_all() {
-            {
-              echo "mypy_supported=false"
-              echo "deptry_supported=false"
-              echo "import_linter_supported=false"
-            } >> "${GITHUB_OUTPUT}"
-          }
+          # uv workspace の全メンバーと extras まで入れる（extras 限定の依存が無いと deptry が誤検知する）。
+          # 排他な extras の宣言やビルド失敗で入らなければ、extras を外して続行する
+          if uv sync --frozen --all-packages --all-extras; then exit 0; fi
+          echo "::warning::extras を含めた uv sync に失敗したため extras を除いて検査します（extras 限定の依存は deptry が誤検知することがあります）"
+          uv sync --frozen --all-packages || { echo "::warning::uv sync に失敗したため mypy / import-linter / deptry は実行されません。uv.lock と index の設定を確認してください"; exit 1; }
 
-          # 契約は repo ごとの任意設定のため、設定を持つ repo でだけ import-linter を扱う（判定は lint-imports step と共用）
-          configured=false
-          if { grep -qsE '^\[importlinter\]' setup.cfg .importlinter || grep -qsE '^\[tool\.importlinter\]' pyproject.toml; }; then
-            configured=true
-          fi
-          echo "import_linter_configured=${configured}" >> "${GITHUB_OUTPUT}"
-
-          # 検査が静かに減ることが運用側から見えるよう notice ではなく warning にする
-          if [ ! -f uv.lock ]; then
-            echo "::warning::リポジトリ直下に uv.lock が無いため mypy / deptry は実行されません（ruff / lint-imports は動きます）"
-            skip_all
-            exit 0
-          fi
-
-          # 既定の group までにとどめる（全 extra / 全 group だと解決できない extra 1 つで無関係な PR まで塞ぐ）
-          if ! uv sync --frozen; then
-            echo "::warning::uv sync に失敗したため mypy / deptry は実行されません。uv.lock と index の設定を確認してください"
-            skip_all
-            exit 0
-          fi
-
-          # 中央固定版を repo の環境に載せられるかは、版の比較ではなく実際の解決で判定する（ツールごとに独立して試す）
-          probe() {
-            if uv run --no-sync --with "$1" python -c '' > /dev/null 2>&1; then
-              echo "$2=true" >> "${GITHUB_OUTPUT}"
-            else
-              echo "::warning::対象 repo の環境に $1 を導入できないため、このツールは実行されません（Python の版を確認してください）"
-              echo "$2=false" >> "${GITHUB_OUTPUT}"
-            fi
-          }
-          probe "mypy==${MYPY_VERSION}" mypy_supported
-          probe "deptry==${DEPTRY_VERSION}" deptry_supported
-          # 設定の無い repo では使われないため、probe の時間も対処不能な warning も出さない
-          if [ "${configured}" = "true" ]; then
-            probe "import-linter==${IMPORT_LINTER_VERSION}" import_linter_supported
-          else
-            echo "import_linter_supported=false" >> "${GITHUB_OUTPUT}"
-          fi
-
-      - name: "mypy"
+      - name: "🧱 mypy - 型チェック"
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
-        shell: bash
-        env:
-          TOOL_SUPPORTED: ${{ steps.deps.outputs.mypy_supported }}
         run: |
-          set -euo pipefail
-          if [ "${TOOL_SUPPORTED}" != "true" ]; then
-            echo "::notice::mypy: 実行条件を満たさないため skip（理由は「依存関係を導入」step の warning）"
-            exit 0
+          if ! uv run --no-sync --with "mypy==${MYPY_VERSION}" mypy .; then
+            echo "::error::mypy: 「Source file found twice」「Duplicate module named」が出る場合は、pyproject.toml の [tool.mypy] に explicit_package_bases = true（src 等に置くパッケージは mypy_path も）を、検査から外すファイルは exclude を設定してください（https://mypy.readthedocs.io/en/stable/running_mypy.html#mapping-file-paths-to-modules）"
+            exit 1
           fi
 
-          # app project は uv sync が自プロジェクトを venv に入れないため src を足す（mypy は PYTHONPATH を見ない）
-          if [ -d src ]; then export MYPYPATH="${PWD}/src${MYPYPATH:+:${MYPYPATH}}"; fi
-
-          # 対象の指定は mypy 自身に任せ、設定に宣言が無いときだけ "." を付けて再実行する
-          result="${RUNNER_TEMP}/mypy.jsonl"
-          errors="${RUNNER_TEMP}/mypy.stderr"
-          run_mypy() {
-            uv run --no-sync --with "mypy==${MYPY_VERSION}" mypy --output json --no-error-summary "$@" \
-              > "${result}" 2> "${errors}"
-          }
-          status=0
-          run_mypy || status=$?
-          if [ "${status}" -ne 0 ] && [ ! -s "${result}" ] \
-            && grep -qF "Missing target module, package, files, or command" "${errors}"; then
-            status=0
-            run_mypy . || status=$?
-          fi
-          cat "${errors}"
-
-          # 検出結果を書く前に終了した場合。検査対象が無いだけなら skip、それ以外は理由を PR に表示する
-          if [ "${status}" -ne 0 ] && [ ! -s "${result}" ]; then
-            if grep -qF "There are no .py[i] files in directory" "${errors}"; then
-              echo "::notice::mypy: 走査範囲（隠しディレクトリ等を除く）に .py が無いため skip"
-              exit 0
-            fi
-            # stderr には uv 自身の warning も混ざるため理由の抽出では除く
-            reason=$({ grep -vE '^warning:' "${errors}" || true; } | { grep -vE '^[[:space:]]*$' || true; } | tail -n 1)
-            echo "::error::mypy: 実行に失敗しました: ${reason:-ログを確認してください}"
-            exit "${status}"
-          fi
-
-          # column は 0 始まりのため +1、ファイル単位のエラーは line が -1 で来るため省く。hint には対処方法が入る
-          echo "::group::mypy 出力（JSON Lines）"
-          cat "${result}"
-          echo "::endgroup::"
-          # workflow command は % を先に %25 にしないと後続文字とくっついて壊れる（CR / LF も同様）。
-          # jq が失敗しても mypy の終了コードを握り潰さないよう || で受ける
-          jq -r '
-            def esc: gsub("%"; "%25") | gsub("\r"; "%0D") | gsub("\n"; "%0A");
-            "::\(if .severity == "error" then "error" else "notice" end) file=\(.file)\(if .line > 0 then ",line=\(.line),col=\(.column + 1)" else "" end)::mypy (\(.code // "-")): \(.message | esc)\(if (.hint // "") == "" then "" else "%0A" + (.hint | esc) end)"
-          ' "${result}" || echo "::error::mypy: 検出結果の整形に失敗しました（詳細はログの JSON Lines）"
-          exit "${status}"
-
-      - name: "lint-imports"
+      - name: "➡️ lint-imports - モジュール依存関係を検査"
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
-        shell: bash
-        env:
-          CONFIGURED: ${{ steps.deps.outputs.import_linter_configured }}
-          TOOL_SUPPORTED: ${{ steps.deps.outputs.import_linter_supported }}
-          COLUMNS: "200"  # 非 TTY では 80 桁で折り返され、長い契約名と BROKEN が別行に割れるため広げる
         run: |
-          set -euo pipefail
-          # 契約は repo ごとの任意設定のため、設定が無ければ検査しない（判定は「依存関係を導入」step と共用）
-          if [ "${CONFIGURED}" != "true" ]; then
-            echo "::notice::import-linter の設定（[importlinter] / [tool.importlinter]）が無いため skip"
+          if ! grep -qsE '^\[(tool\.)?importlinter\]' pyproject.toml setup.cfg .importlinter; then
+            echo "::notice::import-linter の設定が無いため skip"
             exit 0
           fi
+          # 導入されないプロジェクトや、__init__.py を置いたソースルート（src 等）の配下も root package として import できるようにする
+          shopt -s nullglob
+          for dir in */; do export PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}${PWD}/${dir%/}"; done
+          uv run --no-sync --with "import-linter==${IMPORT_LINTER_VERSION}" lint-imports --no-cache --no-logo
 
-          # 依存導入済みなら repo の環境に重ね、そうでなければ中央の Python で動かす
-          if [ "${TOOL_SUPPORTED}" = "true" ]; then
-            lint_imports=(uv run --no-sync --with "import-linter==${IMPORT_LINTER_VERSION}" lint-imports)
-          else
-            lint_imports=(uv tool run --python "${TOOLS_PYTHON}" --from "import-linter==${IMPORT_LINTER_VERSION}" lint-imports)
-          fi
-
-          log="${RUNNER_TEMP}/lint-imports.log"
-          errors="${RUNNER_TEMP}/lint-imports.stderr"
-          run_lint_imports() {
-            { "${lint_imports[@]}" --no-cache --no-logo 2> "${errors}"; } | tee "${log}"
-          }
+      - name: "🗑️ deptry - 不要なパッケージを検知"
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: |
+          # uv workspace は、依存を宣言する単位であるメンバーごとに検査する（ルートはメンバーを内包するため対象外）
+          mapfile -t members < <(uv workspace list --paths | grep -vxF "${PWD}")
+          if [ "${#members[@]}" -eq 0 ]; then members=(.); fi
           status=0
-          run_lint_imports || status="${PIPESTATUS[0]}"
-
-          # lint-imports 自身が cwd を sys.path に入れるため、足して意味があるのは src だけ（flat では再実行しない）。
-          # PYTHONPATH は stdlib / site-packages より前に入り同名モジュールを shadow するため常時は足さない
-          if [ "${status}" -ne 0 ] && [ -d src ] && grep -qsF "Could not find package" "${log}" "${errors}"; then
-            export PYTHONPATH="${PWD}/src${PYTHONPATH:+:${PYTHONPATH}}"
-            echo "::notice::import-linter: 自パッケージを import できなかったため PYTHONPATH=${PYTHONPATH} で再実行します"
-            status=0
-            run_lint_imports || status="${PIPESTATUS[0]}"
-          fi
-          cat "${errors}"
-
-          # 違反箇所（Broken contracts の「- <import 元> -> <import 先> (l.<行>)」）をファイル・行に紐づけて表示する
-          resolve() {
-            local module="${1}" rel base
-            rel="${module//.//}"
-            for base in "" "src/"; do
-              if [ -f "${base}${rel}.py" ]; then echo "${base}${rel}.py"; return 0; fi
-              if [ -f "${base}${rel}/__init__.py" ]; then echo "${base}${rel}/__init__.py"; return 0; fi
-            done
-            return 1
-          }
-          # 先頭のハイフンの後は forbidden 契約だけ空白 3 個、他の契約型は 1 個
-          while IFS= read -r violation; do
-            module=$(sed -E 's/^-[[:space:]]+([^[:space:]]+) -> .*/\1/' <<< "${violation}")
-            detail=$(sed -E 's/^-[[:space:]]+//' <<< "${violation}")
-            # 行番号は複数（l.5, l.9）や不明（l.?）にもなるため、最初の数字だけを line= に使う
-            line=$(sed -nE 's/.*\(l\.[^0-9)]*([0-9]+).*/\1/p' <<< "${violation}")
-            if file=$(resolve "${module}"); then
-              echo "::error file=${file}${line:+,line=${line}}::import-linter: 契約違反の import です（${detail}）"
-            else
-              echo "::error::import-linter: 契約違反の import です（${detail}）"
-            fi
-          done < <({ grep -E '^-[[:space:]]+[^[:space:]]+ -> [^[:space:]]+ \(l\.[^)]*\)$' "${log}" || true; } \
-            | sed -E 's/^-[[:space:]]+/- /' | sort -u)  # 契約型ごとの空白差を潰し、同じ import を 1 件にまとめる
-
-          # 契約単位でも 1 件出す（違反箇所を持たない契約もあるため。結果行には (N ignored imports) 等が後ろに付く）
-          { grep -E ' BROKEN([[:space:]]|$)' "${log}" || true; } | sed -E 's/ BROKEN([[:space:]].*)?$//' | while IFS= read -r contract; do
-            echo "::error::import-linter: 契約「${contract}」が破られています（詳細はログの Broken contracts）"
+          for member in "${members[@]}"; do
+            echo "deptry ${member}"
+            (cd "${member}" && uv run --no-sync --with "deptry==${DEPTRY_VERSION}" deptry .) || status=1
           done
-          # 契約違反以外の失敗（設定の誤り・root_package が import できない等）も PR に表示する
-          if [ "${status}" -ne 0 ] && ! grep -qE ' BROKEN([[:space:]]|$)' "${log}"; then
-            # uv 自身の進捗は stderr に出るため、まず import-linter の出力（stdout）から理由を取る
-            reason=$({ grep -vE '^[[:space:]]*$' "${log}" || true; } | tail -n 1)
-            if [ -z "${reason}" ]; then
-              reason=$({ grep -vE '^warning:|^[[:space:]]*$' "${errors}" || true; } | tail -n 1)
-            fi
-            echo "::error::import-linter: 実行に失敗しました: ${reason:-ログを確認してください}"
+          if [ "${status}" -ne 0 ]; then
+            echo "::error::deptry: 自プロジェクトのパッケージ（src/ や app/ 配下など）が DEP001 / DEP003 になる場合は pyproject.toml の [tool.deptry] known_first_party に（https://deptry.com/usage/#known-first-party）、別の uv.lock を持つ入れ子のプロジェクトなど検査から外すディレクトリは extend_exclude に（https://deptry.com/usage/#extend-exclude）追加してください。その他の違反の対処は https://deptry.com/rules-violations/ を参照してください"
           fi
           exit "${status}"
-
-      - name: "deptry"
-        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
-        shell: bash
-        env:
-          TOOL_SUPPORTED: ${{ steps.deps.outputs.deptry_supported }}
-        run: |
-          set -euo pipefail
-          if [ "${TOOL_SUPPORTED}" != "true" ]; then
-            echo "::notice::deptry: 実行条件を満たさないため skip（理由は「依存関係を導入」step の warning）"
-            exit 0
-          fi
-
-          # src レイアウトの自パッケージが DEP003 と誤検知されるのを、root を足さず known-first-party で解消する
-          # （他のレイアウトや除外は repo 側の [tool.deptry] で調整する）
-          args=()
-          if [ -d src ]; then
-            while IFS= read -r entry; do
-              name="${entry##*/}"
-              case "${name}" in __pycache__|*.egg-info) continue ;; esac
-              # .py を 1 つも含まないディレクトリ（templates / static 等）まで渡すと、
-              # 同名の third-party を自前パッケージと誤認して本物の DEP003 を握り潰す
-              if [ -d "${entry}" ] && [ -z "$(find "${entry}" -name '*.py' -print -quit)" ]; then continue; fi
-              args+=(--known-first-party "${name%.py}")
-            done < <(find src -mindepth 1 -maxdepth 1 \( -type d -o -name '*.py' \) | sort -u)
-          fi
-
-          result="${RUNNER_TEMP}/deptry.json"
-          status=0
-          # annotation は deptry 本体の --github-output に任せる（% 等のエスケープと、行を持たない違反の扱いが本体側で正しい）
-          uv run --no-sync --with "deptry==${DEPTRY_VERSION}" deptry . "${args[@]}" \
-            --github-output --json-output "${result}" || status=$?
-
-          # 検出結果を書く前に失敗した場合（依存の宣言が見つからない等）も PR に表示する。
-          # deptry は検出 0 件でも [] を書くため、ファイルの有無ではなく中身で判定する
-          if [ "${status}" -ne 0 ] && ! jq -e 'length > 0' "${result}" > /dev/null 2>&1; then
-            echo "::error::deptry: 実行に失敗しました（ログを確認してください）"
-          fi
-          exit "${status}"
-
-      - name: "uv のキャッシュを保存"
-        # 完全一致で復元できた run では保存し直さない。uv cache prune --ci はツールの使い捨て環境を壊すため使わない
-        if: ${{ !cancelled() && steps.restore.outcome == 'success' && steps.restore.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
-        with:
-          path: |
-            ~/.cache/uv
-            ~/.local/share/uv
-          key: ${{ steps.restore.outputs.cache-primary-key }}
