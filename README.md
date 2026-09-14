@@ -6,7 +6,3 @@ Organization 共通のルールセット/CI/セキュリティワークフロー
 ### 🎊 セットアップ
 
 [docs/SETUP.md](./docs/SETUP.md) を参照して、実行してください。
-
-### 🧠 Claude レビューワークフロー
-
-PR のコメント(`/code-review` / `/security-review`)で Claude Code にレビューさせる reusable workflow は [docs/CLAUDE_REVIEW.md](./docs/CLAUDE_REVIEW.md) を参照してください。

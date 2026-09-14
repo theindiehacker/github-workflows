@@ -437,7 +437,6 @@ renovatebot/github-action@*
 ## 4. 🧠 Claude レビューワークフロー
 
 PR のコメント(`/code-review` / `/security-review`)で Claude Code にレビューさせる reusable workflow を使うための設定。
-リスクの前提・使い方・呼び出し側ファイルは [CLAUDE_REVIEW.md](./CLAUDE_REVIEW.md) を参照。
 
 <details><summary><b>組織シークレットを登録する</b></summary>
 
