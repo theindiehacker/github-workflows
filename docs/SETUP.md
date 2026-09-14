@@ -130,12 +130,27 @@ Rules セクションで以下のチェックを外す:
 |:--------|:--|
 | Required approvals | `1` |
 | Dismiss stale pull request approvals when new commits are pushed | ✅(承認後に push されたコミットが再レビューなしでマージされるのを防ぐ) |
-| Require review from Code Owners | ❌ |
+| Require review from Code Owners | ✅(Claude など bot の承認だけでマージ条件が満たされるのを防ぐ。下記「CODEOWNERS の配置」参照) |
 | Require approval of the most recent reviewable push | ❌ |
 | Require conversation resolution before merging | ❌ |
 | Allowed merge methods | `Merge` / `Squash` / `Rebase`(すべて許可) |
 
 ※ 承認が Required approvals にカウントされるのは write アクセス保持者のレビューのみ。PR 作成者本人による自己承認はできない。
+
+#### CODEOWNERS の配置
+
+bot(`github-actions`)の承認も Required approvals にカウントされるため、`Require review from Code Owners` と
+`CODEOWNERS` の組み合わせで「人間の承認」を担保する(bot は code owner になれない)。
+
+**全リポジトリの default branch に** `.github/CODEOWNERS` を配置すること。配置がないリポジトリでは
+Code Owners のルールが素通りし、「4.」の Claude レビューの承認だけでマージ条件を満たせてしまう。
+
+```text
+# 全ファイルをレビュー対象にする
+*  @<org>/<開発チーム名>
+```
+
+> ⚠️ code owner 本人が作成した PR は自己承認できない。チームメンバーが 1 人だけの場合は「1.」の注意書きを参照
 
 </details>
 
@@ -439,9 +454,10 @@ PR のコメント(`/code-review` / `/security-review`)で Claude Code にレビ
 - コードレビューとセキュリティレビューは同じ bot から送られるため、後から送ったレビューで PR の状態が上書きされる。
   **もう一方が変更要求中のときは approve を送らず comment に落とす**ことで、変更要求が意図せず解除されるのを防いでいる
 
-> ⚠️ bot(`github-actions`)の承認もルールセットの **Required approvals** にカウントされる。
-> 人間のレビューを必須にしたい場合は「2.」ルールセット「✅ PR の承認を必須化」で
-> **Require review from Code Owners** を有効化し、各リポジトリに `CODEOWNERS` を配置すること
+> ⚠️ bot(`github-actions`)の承認もルールセットの **Required approvals** にカウントされるため、
+> Claude の approve だけではマージできないよう「2.」ルールセット「✅ PR の承認を必須化」の
+> **Require review from Code Owners** と `CODEOWNERS` で人間の承認を担保している。
+> `CODEOWNERS` 未配置のリポジトリではこの歯止めが効かないので注意すること
 
 </details>
 
@@ -474,5 +490,6 @@ action はこの App のトークンで進捗コメントやインラインコ�
 |:----|:----|
 | `anthropics/claude-code-action` / `oven-sh/setup-bun` の実行許可 | 「3.」 Actions permissions |
 | `claude-*.yml` の変更に security チームの承認を必須化 | 「2.」ルールセット「🛠️ 検知ワークフロー変更の承認必須化」(File patterns `.github/workflows/**` で自動的に対象) |
+| Claude の approve だけでマージされないようにする | 「2.」ルールセット「✅ PR の承認を必須化」の Code Owners レビュー必須化 + `CODEOWNERS` の配置 |
 
 </details>
