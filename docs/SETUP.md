@@ -333,6 +333,8 @@ Rules セクションで以下のチェックを外す:
 | `github-workflows` | `main` | `.github/workflows/shellcheck.yml` | シェルスクリプトの lint |
 | `github-workflows` | `main` | `.github/workflows/py-check.yml` | Python の規約(uv での依存管理)・lint・書式・型・依存関係(型と依存関係は `uv.lock` のあるディレクトリごと) |
 
+> 必須ワークフローは対象 repo のコードを実行しない解析に揃える。型・依存関係の検査に導入済みの環境を要する `py-check.yml` の依存導入(`uv sync`)だけが例外
+
 - ✅ **Do not require workflows on creation**
 
 </details>
