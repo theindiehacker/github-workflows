@@ -34,7 +34,7 @@ jobs:
       TOOLS_PYTHON: "3.12"
       # uv 本体。キャッシュキーからも参照するため job の env に置く（tag に v が無いので extractVersion で上書き）
       # renovate: datasource=github-release-attachments depName=astral-sh/uv extractVersion=^(?<version>.*)$
-      UV_VERSION: 0.12.13
+      UV_VERSION: "0.12.13"
       UV_SHA256: 745765a3b6e360ad76743599ae5c42e9278c7edf8bbff9fc76d05bf2623a04dd
     steps:
       - name: "検査対象を判定"
@@ -67,6 +67,8 @@ jobs:
         with:
           persist-credentials: false
 
+      # TODO: 「curl → sha256sum -c → /usr/local/bin」の導入ブロックは 7 本目。
+      #       Renovate の regex と合わせて composite action に切り出す（別 PR）
       - name: "Install uv"
         id: uv
         if: steps.filter.outputs.changes != '[]'
@@ -92,7 +94,10 @@ jobs:
         if: ${{ !cancelled() && steps.uv.outcome == 'success' }}
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
-          path: ~/.cache/uv
+          # managed Python は ~/.local/share/uv/python に展開されるためキャッシュ対象に含める
+          path: |
+            ~/.cache/uv
+            ~/.local/share/uv
           key: py-check-uv${{ env.UV_VERSION }}-${{ runner.os }}-py${{ env.TOOLS_PYTHON }}-${{ env.RUFF_VERSION }}-${{ env.MYPY_VERSION }}-${{ env.IMPORT_LINTER_VERSION }}-${{ env.DEPTRY_VERSION }}-${{ hashFiles('uv.lock') }}
           restore-keys: |
             py-check-uv${{ env.UV_VERSION }}-${{ runner.os }}-py${{ env.TOOLS_PYTHON }}-${{ env.RUFF_VERSION }}-${{ env.MYPY_VERSION }}-${{ env.IMPORT_LINTER_VERSION }}-${{ env.DEPTRY_VERSION }}-
@@ -149,6 +154,8 @@ jobs:
 
       - name: "依存関係を導入"
         # mypy / deptry は導入済みの環境を要するため uv.lock に従って導入する（対象 repo のコードが動く唯一の step）。
+        # 他の必須ワークフローはコードを実行しない解析に揃えてあり、ここがその線引きの唯一の例外
+        # （型と依存関係の検査は third-party の実体を要するため。token は contents: read のみ・credentials も残さない）。
         # uv.lock と各ツールの設定はリポジトリ直下のみ参照する（モノレポでは mypy / deptry が動かない）
         id: deps
         if: ${{ !cancelled() && steps.uv.outcome == 'success' }}
@@ -157,12 +164,18 @@ jobs:
           set -euo pipefail
           skip_all() {
             {
-              echo "installed=false"
               echo "mypy_supported=false"
               echo "deptry_supported=false"
               echo "import_linter_supported=false"
             } >> "${GITHUB_OUTPUT}"
           }
+
+          # 契約は repo ごとの任意設定のため、設定を持つ repo でだけ import-linter を扱う（判定は lint-imports step と共用）
+          configured=false
+          if { grep -qsE '^\[importlinter\]' setup.cfg .importlinter || grep -qsE '^\[tool\.importlinter\]' pyproject.toml; }; then
+            configured=true
+          fi
+          echo "import_linter_configured=${configured}" >> "${GITHUB_OUTPUT}"
 
           # 検査が静かに減ることが運用側から見えるよう notice ではなく warning にする
           if [ ! -f uv.lock ]; then
@@ -177,7 +190,6 @@ jobs:
             skip_all
             exit 0
           fi
-          echo "installed=true" >> "${GITHUB_OUTPUT}"
 
           # 中央固定版を repo の環境に載せられるかは、版の比較ではなく実際の解決で判定する（ツールごとに独立して試す）
           probe() {
@@ -190,17 +202,21 @@ jobs:
           }
           probe "mypy==${MYPY_VERSION}" mypy_supported
           probe "deptry==${DEPTRY_VERSION}" deptry_supported
-          probe "import-linter==${IMPORT_LINTER_VERSION}" import_linter_supported
+          # 設定の無い repo では使われないため、probe の時間も対処不能な warning も出さない
+          if [ "${configured}" = "true" ]; then
+            probe "import-linter==${IMPORT_LINTER_VERSION}" import_linter_supported
+          else
+            echo "import_linter_supported=false" >> "${GITHUB_OUTPUT}"
+          fi
 
       - name: "mypy"
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         shell: bash
         env:
-          DEPS_INSTALLED: ${{ steps.deps.outputs.installed }}
           TOOL_SUPPORTED: ${{ steps.deps.outputs.mypy_supported }}
         run: |
           set -euo pipefail
-          if [ "${DEPS_INSTALLED}" != "true" ] || [ "${TOOL_SUPPORTED}" != "true" ]; then
+          if [ "${TOOL_SUPPORTED}" != "true" ]; then
             echo "::notice::mypy: 実行条件を満たさないため skip（理由は「依存関係を導入」step の warning）"
             exit 0
           fi
@@ -240,21 +256,25 @@ jobs:
           echo "::group::mypy 出力（JSON Lines）"
           cat "${result}"
           echo "::endgroup::"
+          # workflow command は % を先に %25 にしないと後続文字とくっついて壊れる（CR / LF も同様）。
+          # jq が失敗しても mypy の終了コードを握り潰さないよう || で受ける
           jq -r '
-            "::\(if .severity == "error" then "error" else "notice" end) file=\(.file)\(if .line > 0 then ",line=\(.line),col=\(.column + 1)" else "" end)::mypy (\(.code // "-")): \(.message)\(if (.hint // "") == "" then "" else "%0A" + (.hint | gsub("\n"; "%0A")) end)"
-          ' "${result}"
+            def esc: gsub("%"; "%25") | gsub("\r"; "%0D") | gsub("\n"; "%0A");
+            "::\(if .severity == "error" then "error" else "notice" end) file=\(.file)\(if .line > 0 then ",line=\(.line),col=\(.column + 1)" else "" end)::mypy (\(.code // "-")): \(.message | esc)\(if (.hint // "") == "" then "" else "%0A" + (.hint | esc) end)"
+          ' "${result}" || echo "::error::mypy: 検出結果の整形に失敗しました（詳細はログの JSON Lines）"
           exit "${status}"
 
       - name: "lint-imports"
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         shell: bash
         env:
+          CONFIGURED: ${{ steps.deps.outputs.import_linter_configured }}
           TOOL_SUPPORTED: ${{ steps.deps.outputs.import_linter_supported }}
           COLUMNS: "200"  # 非 TTY では 80 桁で折り返され、長い契約名と BROKEN が別行に割れるため広げる
         run: |
           set -euo pipefail
-          # 契約は repo ごとの任意設定のため、import-linter の設定探索と同じ場所に無ければ検査しない
-          if ! { grep -qsE '^\[importlinter\]' setup.cfg .importlinter || grep -qsE '^\[tool\.importlinter\]' pyproject.toml; }; then
+          # 契約は repo ごとの任意設定のため、設定が無ければ検査しない（判定は「依存関係を導入」step と共用）
+          if [ "${CONFIGURED}" != "true" ]; then
             echo "::notice::import-linter の設定（[importlinter] / [tool.importlinter]）が無いため skip"
             exit 0
           fi
@@ -269,18 +289,15 @@ jobs:
           log="${RUNNER_TEMP}/lint-imports.log"
           errors="${RUNNER_TEMP}/lint-imports.stderr"
           run_lint_imports() {
-            { "${lint_imports[@]}" --no-cache 2> "${errors}"; } | tee "${log}"
+            { "${lint_imports[@]}" --no-cache --no-logo 2> "${errors}"; } | tee "${log}"
           }
           status=0
           run_lint_imports || status="${PIPESTATUS[0]}"
 
-          # PYTHONPATH は stdlib / site-packages より前に入り同名モジュールを shadow するため、必要なときだけ足す
-          if [ "${status}" -ne 0 ] && grep -qsF "Could not find package" "${log}" "${errors}"; then
-            if [ -d src ]; then
-              export PYTHONPATH="${PWD}/src${PYTHONPATH:+:${PYTHONPATH}}"
-            else
-              export PYTHONPATH="${PWD}${PYTHONPATH:+:${PYTHONPATH}}"
-            fi
+          # lint-imports 自身が cwd を sys.path に入れるため、足して意味があるのは src だけ（flat では再実行しない）。
+          # PYTHONPATH は stdlib / site-packages より前に入り同名モジュールを shadow するため常時は足さない
+          if [ "${status}" -ne 0 ] && [ -d src ] && grep -qsF "Could not find package" "${log}" "${errors}"; then
+            export PYTHONPATH="${PWD}/src${PYTHONPATH:+:${PYTHONPATH}}"
             echo "::notice::import-linter: 自パッケージを import できなかったため PYTHONPATH=${PYTHONPATH} で再実行します"
             status=0
             run_lint_imports || status="${PIPESTATUS[0]}"
@@ -297,16 +314,19 @@ jobs:
             done
             return 1
           }
+          # 先頭のハイフンの後は forbidden 契約だけ空白 3 個、他の契約型は 1 個
           while IFS= read -r violation; do
-            module=$(sed -E 's/^- ([^ ]+) -> .*/\1/' <<< "${violation}")
-            line=$(sed -E 's/.*\(l\.([0-9]+)\).*/\1/' <<< "${violation}")
-            detail=$(sed -E 's/^- //; s/ \(l\.[0-9]+\)$//' <<< "${violation}")
+            module=$(sed -E 's/^-[[:space:]]+([^[:space:]]+) -> .*/\1/' <<< "${violation}")
+            detail=$(sed -E 's/^-[[:space:]]+//' <<< "${violation}")
+            # 行番号は複数（l.5, l.9）や不明（l.?）にもなるため、最初の数字だけを line= に使う
+            line=$(sed -nE 's/.*\(l\.[^0-9)]*([0-9]+).*/\1/p' <<< "${violation}")
             if file=$(resolve "${module}"); then
-              echo "::error file=${file},line=${line}::import-linter: 契約違反の import です（${detail}）"
+              echo "::error file=${file}${line:+,line=${line}}::import-linter: 契約違反の import です（${detail}）"
             else
               echo "::error::import-linter: 契約違反の import です（${detail}）"
             fi
-          done < <({ grep -E '^- [^ ]+ -> [^ ]+ \(l\.[0-9]+\)$' "${log}" || true; } | sort -u)
+          done < <({ grep -E '^-[[:space:]]+[^[:space:]]+ -> [^[:space:]]+ \(l\.[^)]*\)$' "${log}" || true; } \
+            | sed -E 's/^-[[:space:]]+/- /' | sort -u)  # 契約型ごとの空白差を潰し、同じ import を 1 件にまとめる
 
           # 契約単位でも 1 件出す（違反箇所を持たない契約もあるため。結果行には (N ignored imports) 等が後ろに付く）
           { grep -E ' BROKEN([[:space:]]|$)' "${log}" || true; } | sed -E 's/ BROKEN([[:space:]].*)?$//' | while IFS= read -r contract; do
@@ -314,7 +334,11 @@ jobs:
           done
           # 契約違反以外の失敗（設定の誤り・root_package が import できない等）も PR に表示する
           if [ "${status}" -ne 0 ] && ! grep -qE ' BROKEN([[:space:]]|$)' "${log}"; then
-            reason=$({ cat "${log}" "${errors}"; } | { grep -vE '^warning:' || true; } | { grep -vE '^[[:space:]]*$' || true; } | tail -n 1)
+            # uv 自身の進捗は stderr に出るため、まず import-linter の出力（stdout）から理由を取る
+            reason=$({ grep -vE '^[[:space:]]*$' "${log}" || true; } | tail -n 1)
+            if [ -z "${reason}" ]; then
+              reason=$({ grep -vE '^warning:|^[[:space:]]*$' "${errors}" || true; } | tail -n 1)
+            fi
             echo "::error::import-linter: 実行に失敗しました: ${reason:-ログを確認してください}"
           fi
           exit "${status}"
@@ -323,11 +347,10 @@ jobs:
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         shell: bash
         env:
-          DEPS_INSTALLED: ${{ steps.deps.outputs.installed }}
           TOOL_SUPPORTED: ${{ steps.deps.outputs.deptry_supported }}
         run: |
           set -euo pipefail
-          if [ "${DEPS_INSTALLED}" != "true" ] || [ "${TOOL_SUPPORTED}" != "true" ]; then
+          if [ "${TOOL_SUPPORTED}" != "true" ]; then
             echo "::notice::deptry: 実行条件を満たさないため skip（理由は「依存関係を導入」step の warning）"
             exit 0
           fi
@@ -336,23 +359,25 @@ jobs:
           # （他のレイアウトや除外は repo 側の [tool.deptry] で調整する）
           args=()
           if [ -d src ]; then
-            while IFS= read -r pkg; do
-              if [ -n "${pkg}" ]; then args+=(--known-first-party "${pkg}"); fi
-            done < <(find src -mindepth 1 -maxdepth 1 \( -type d -o -name '*.py' \) -printf '%f\n' \
-              | sed -E 's/\.py$//' | grep -vE '^(__pycache__|.*\.egg-info)$' | sort -u)
+            while IFS= read -r entry; do
+              name="${entry##*/}"
+              case "${name}" in __pycache__|*.egg-info) continue ;; esac
+              # .py を 1 つも含まないディレクトリ（templates / static 等）まで渡すと、
+              # 同名の third-party を自前パッケージと誤認して本物の DEP003 を握り潰す
+              if [ -d "${entry}" ] && [ -z "$(find "${entry}" -name '*.py' -print -quit)" ]; then continue; fi
+              args+=(--known-first-party "${name%.py}")
+            done < <(find src -mindepth 1 -maxdepth 1 \( -type d -o -name '*.py' \) | sort -u)
           fi
 
           result="${RUNNER_TEMP}/deptry.json"
           status=0
-          uv run --no-sync --with "deptry==${DEPTRY_VERSION}" deptry . "${args[@]}" --json-output "${result}" || status=$?
+          # annotation は deptry 本体の --github-output に任せる（% 等のエスケープと、行を持たない違反の扱いが本体側で正しい）
+          uv run --no-sync --with "deptry==${DEPTRY_VERSION}" deptry . "${args[@]}" \
+            --github-output --json-output "${result}" || status=$?
 
+          # 検出結果を書く前に失敗した場合（依存の宣言が見つからない等）も PR に表示する。
           # deptry は検出 0 件でも [] を書くため、ファイルの有無ではなく中身で判定する
-          if jq -e 'length > 0' "${result}" > /dev/null 2>&1; then
-            jq -r '.[]
-              | "::error file=\(.location.file)\(if .location.line != null then ",line=\(.location.line),col=\(.location.column)" else "" end)::deptry (\(.error.code)): \(.error.message)"
-            ' "${result}"
-          elif [ "${status}" -ne 0 ]; then
-            # 検出結果を書く前に失敗した場合（依存の宣言が見つからない等）も PR に表示する
+          if [ "${status}" -ne 0 ] && ! jq -e 'length > 0' "${result}" > /dev/null 2>&1; then
             echo "::error::deptry: 実行に失敗しました（ログを確認してください）"
           fi
           exit "${status}"
@@ -362,5 +387,7 @@ jobs:
         if: ${{ !cancelled() && steps.restore.outcome == 'success' && steps.restore.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
-          path: ~/.cache/uv
+          path: |
+            ~/.cache/uv
+            ~/.local/share/uv
           key: ${{ steps.restore.outputs.cache-primary-key }}

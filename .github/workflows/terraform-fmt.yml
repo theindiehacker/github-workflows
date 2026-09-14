@@ -1,6 +1,7 @@
 name: "🏗️ terraform fmt"
 
 # Terraform の書式を terraform fmt で検査する（init が要る validate / test は含めない）。
+# 必須ワークフローは対象 repo のコードを実行しない解析に揃える（py-check.yml の依存導入だけが例外）。
 on:
   # 必須ワークフローは on: のフィルタが無視され全 PR で起動するため、対象の判定は job 内で行う
   pull_request:
