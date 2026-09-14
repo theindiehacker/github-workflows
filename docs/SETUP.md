@@ -130,28 +130,12 @@ Rules セクションで以下のチェックを外す:
 |:--------|:--|
 | Required approvals | `1` |
 | Dismiss stale pull request approvals when new commits are pushed | ✅(承認後に push されたコミットが再レビューなしでマージされるのを防ぐ) |
-| Require review from Code Owners | ✅(Claude など bot の承認だけでマージ条件が満たされるのを防ぐ。下記「CODEOWNERS の配置」参照) |
+| Require review from Code Owners | ❌ |
 | Require approval of the most recent reviewable push | ❌ |
 | Require conversation resolution before merging | ❌ |
 | Allowed merge methods | `Merge` / `Squash` / `Rebase`(すべて許可) |
 
 ※ 承認が Required approvals にカウントされるのは write アクセス保持者のレビューのみ。PR 作成者本人による自己承認はできない。
-
-#### CODEOWNERS の配置
-
-「4.」の Claude レビューは `claude[bot]`(GitHub App)として送信され、その承認は Required approvals に
-カウントされると報告されている。Claude の承認だけでマージ条件が満たされることを防ぐため、
-`Require review from Code Owners` と `CODEOWNERS` で「人間の承認」を担保する(bot は code owner になれない)。
-
-**全リポジトリの default branch に** `.github/CODEOWNERS` を配置すること。配置がないリポジトリでは
-Code Owners のルールが素通りする。
-
-```text
-# 全ファイルをレビュー対象にする
-*  @<org>/<開発チーム名>
-```
-
-> ⚠️ code owner 本人が作成した PR は自己承認できない。チームメンバーが 1 人だけの場合は「1.」の注意書きを参照
 
 </details>
 
@@ -441,27 +425,6 @@ renovatebot/github-action@*
 
 PR のコメント(`/code-review` / `/security-review`)で Claude Code にレビューさせる reusable workflow を使うための設定。
 
-<details><summary><b>コードレビュー結果の見かた(approve / request changes)</b></summary>
-
-**コードレビュー(`/code-review`)のみ**、指摘の投稿に加えてマージ可否の判定を **PR レビュー**として送信する。
-セキュリティレビュー(`/security-review`)は指摘の投稿のみで、PR レビューは送信しない。
-
-| 判定 | PR 上の表示 | 意味 |
-|:----|:----------|:----|
-| approve | ✅ Approved | 修正必須の指摘なし。マージしてよい |
-| request changes | ⛔ Changes requested | 修正必須の指摘あり。修正して再レビューが必要 |
-
-- レビューは `claude[bot]`(Claude GitHub App)として送信される
-- 再レビューは `/code-review` を再度コメントする。新しいレビューが前回の判定を上書きする
-
-> ⚠️ このレビューは `claude[bot]`(Claude GitHub App)として送信される。GitHub App のレビューは
-> ルールセットの **Required approvals** にカウントされ、変更要求はマージをブロックすると報告されている
-> (`github-actions[bot]` は反映されない)。**Claude の approve だけでマージ条件が満たされないよう、
-> 「2.」の Code Owners 必須化 + `CODEOWNERS` 配置が必須**。
-> bot レビューの扱いは GitHub のドキュメントに明記がないため、実際の挙動は導入先リポジトリで 1 度確認すること
-
-</details>
-
 <details><summary><b>組織シークレットを登録する</b></summary>
 
 🔗 Organization → Settings → Secrets and variables → Actions → **New organization secret**
@@ -491,6 +454,5 @@ action はこの App のトークンで進捗コメントやインラインコ�
 |:----|:----|
 | `anthropics/claude-code-action` / `oven-sh/setup-bun` の実行許可 | 「3.」 Actions permissions |
 | `claude-*.yml` の変更に security チームの承認を必須化 | 「2.」ルールセット「🛠️ 検知ワークフロー変更の承認必須化」(File patterns `.github/workflows/**` で自動的に対象) |
-| Claude の approve だけでマージされないようにする | 「2.」ルールセット「✅ PR の承認を必須化」の Code Owners レビュー必須化 + `CODEOWNERS` の配置 |
 
 </details>
