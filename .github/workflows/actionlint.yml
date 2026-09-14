@@ -29,12 +29,14 @@ jobs:
         id: filter
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d  # v4.0.3
         with:
+          # 削除のみの変更は残りのファイルの lint 結果を変えないため対象外（rename は added + deleted に分解され新パス側が対象になる）。
+          # ワークフローを全削除した PR で actionlint が「no project was found」で exit 3 になるのも防ぐ
           filters: |
             workflows:
-              - ".github/workflows/*.yml"
-              - ".github/workflows/*.yaml"
-              - ".github/actionlint.yml"
-              - ".github/actionlint.yaml"
+              - added|modified|copied: ".github/workflows/*.yml"
+              - added|modified|copied: ".github/workflows/*.yaml"
+              - added|modified|copied: ".github/actionlint.yml"
+              - added|modified|copied: ".github/actionlint.yaml"
 
       - name: "Checkout"
         if: steps.filter.outputs.workflows == 'true'
