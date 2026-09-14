@@ -1,0 +1,99 @@
+name: "🧠 [Claude] Security Review"
+
+on:
+  workflow_call:
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        description: "claude setup-token で発行した OAuth トークン（ANTHROPIC_API_KEY とどちらか一方）"
+        required: false
+      ANTHROPIC_API_KEY:
+        description: "Anthropic API キー（CLAUDE_CODE_OAUTH_TOKEN とどちらか一方）"
+        required: false
+
+# write は job 側でのみ与える
+permissions: {}
+
+jobs:
+  security-review:
+    name: "セキュリティレビュー"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+
+    # workflow レベルに移さないこと (無関係なコメントで実行中のレビューが巻き添えキャンセルされる)
+    concurrency:
+      group: security-review-pr-${{ github.event.issue.number }}
+      cancel-in-progress: true
+
+    # pwn request 対策。条件を緩めないこと
+    # closed / merged PR では action が PR ブランチではなく新規ブランチを作る経路に入るため open のみ
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.issue.state == 'open' &&
+      github.event.comment.body == '/security-review' &&
+      github.event.comment.user.type != 'Bot' &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+
+    env:
+      PR_NUMBER: ${{ github.event.issue.number }}
+
+    steps:
+      - name: "🔎 PR の base ブランチを取得"
+        id: preflight
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # --jq は欠損フィールドをリテラル "null" にするため、空と併せて弾く
+          base_ref="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.base.ref')"
+          if [ -z "$base_ref" ] || [ "$base_ref" = "null" ]; then
+            echo "::error::PR の base ブランチを取得できませんでした"
+            exit 1
+          fi
+          echo "base_ref=$base_ref" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: refs/pull/${{ env.PR_NUMBER }}/head
+          fetch-depth: 0
+          # false にしないこと。tag mode の action は checkout が残す認証で PR ブランチを fetch する (.github/ghalint.yml で除外)
+          persist-credentials: true
+
+      - name: "🔖 origin/HEAD を PR の base に向ける"
+        shell: bash
+        env:
+          BASE_REF: ${{ steps.preflight.outputs.base_ref }}
+        run: |
+          set -euo pipefail
+          # security-review スキルは内部で `git diff origin/HEAD...` を使うが、checkout は origin/HEAD を作らない。
+          # `git remote set-head origin --auto` だと既定ブランチに向いてしまうため、PR の実 base へ向ける
+          # symbolic-ref は参照先の存在を確認しないため、無い場合はスキル実行前にここで失敗させる
+          if ! git rev-parse --verify --quiet "refs/remotes/origin/${BASE_REF}" > /dev/null; then
+            echo "::error::base ブランチ origin/${BASE_REF} が見つかりません"
+            exit 1
+          fi
+          git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/${BASE_REF}"
+
+      - name: Run Claude Security Review
+        uses: anthropics/claude-code-action@0a8d3c9443bbff909ab973b6a17a340b913f229f  # v1.0.221
+        env:
+          # バックグラウンドを有効化しておくとレビューが投稿されずにワークフローが終了するため、無効化
+          CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
+        with:
+          # どちらか一方だけが組織シークレットに登録されている前提。空文字は action 側で未設定として扱われる
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          track_progress: 'true'
+          show_full_output: false
+          claude_args: |
+            --model claude-opus-5
+            --max-turns 200
+            --allowedTools "mcp__github_inline_comment__create_inline_comment"
+          # 指摘を該当行にも残すため、投稿先を引数で指示する (引数はスキル本文の末尾に ARGUMENTS として付く)
+          prompt: '/security-review 報告する各指摘を mcp__github_inline_comment__create_inline_comment で該当行へのインラインコメントとして投稿すること'
