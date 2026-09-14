@@ -76,8 +76,9 @@ jobs:
         with:
           persist-credentials: false
 
+      # 設定ファイルを持つ repo でだけ導入する（YAML の読み取りにしか使わない）
       - name: "Install uv"
-        if: steps.filter.outputs.python == 'true'
+        if: steps.filter.outputs.python == 'true' && hashFiles('.github/python.yml') != ''
         uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
         with:
           version: ${{ env.UV_VERSION }}
@@ -90,22 +91,37 @@ jobs:
         run: |
           set -euo pipefail
           # 設定の読み取りと uv.lock の列挙（-z のまま扱う。改行や非 ASCII を含むパスが壊れるため）。
-          # --no-config で対象 repo の uv.toml を読ませない（index を差し替えられると導入するパッケージのコードが動く）
-          uv run --no-config --no-project --python '>=3.11' --with "pyyaml==${PYYAML_VERSION}" python - <<'EOF'
+          # 設定ファイルがある repo でだけ PyYAML を導入する。--no-config で対象 repo の uv.toml を読ませない
+          # （index を差し替えられると導入するパッケージのコードが動く）
+          if [ -e "${PY_CHECK_CONFIG}" ]; then
+            python=(uv run --no-config --no-project --python '>=3.11' --with "pyyaml==${PYYAML_VERSION}" python)
+          else
+            python=(python3)
+          fi
+          "${python[@]}" - <<'EOF'
           import json
           import os
           import subprocess
           import sys
           from pathlib import Path
 
-          import yaml
-
           config_path = Path(os.environ["PY_CHECK_CONFIG"])
-          config = yaml.safe_load(config_path.read_text()) or {} if config_path.is_file() else {}
+          if config_path.is_file():
+              import yaml
+
+              config = yaml.safe_load(config_path.read_text()) or {}
+          else:
+              config = {}
+
+
+          def escape(value, is_property=False):
+              # 対象 repo 由来の値をそのまま埋めるとワークフローコマンドを偽装できる
+              value = str(value).replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              return value.replace(":", "%3A").replace(",", "%2C") if is_property else value
 
 
           def fail(message):
-              print(f"::error file={config_path}::{message}")
+              print(f"::error file={escape(config_path, True)}::{escape(message)}")
               sys.exit(1)
 
 
@@ -149,7 +165,7 @@ jobs:
           if exclude and not projects and find_projects():
               fail("exclude で検査対象のプロジェクトがすべて除外されています")
           if exclude:
-              print(f"::notice file={config_path}::検査対象から除外します: {' / '.join(exclude)}")
+              print(f"::notice file={escape(config_path, True)}::検査対象から除外します: {escape(' / '.join(exclude))}")
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
               for key, value in (("projects", projects), ("roots", roots), ("exclude", exclude)):
                   print(f"{key}={json.dumps(value)}", file=output)
@@ -178,6 +194,9 @@ jobs:
           EXCLUDE: ${{ needs.detect.outputs.exclude }}
         run: |
           set -euo pipefail
+          # 対象 repo 由来のパスをそのまま埋めるとワークフローコマンドを偽装できるためエスケープする
+          escape() { local value=${1//%/%25}; value=${value//$'\r'/%0D}; printf '%s' "${value//$'\n'/%0A}"; }
+          escape_property() { local value; value=$(escape "$1"); value=${value//:/%3A}; printf '%s' "${value//,/%2C}"; }
           status=0
           mapfile -t pathspecs < <(jq -r '.[] | ":(exclude)" + .' <<< "${EXCLUDE}")
           # requirements*.txt は pyproject.toml の隣にあるものだけを対象にする（docs/ や ci/ の pin ファイルは対象外）
@@ -194,7 +213,7 @@ jobs:
               setup.py|setup.cfg)
                 if ! grep -qE '(install|setup)_requires' "${file}"; then continue; fi ;;
             esac
-            echo "::error file=${file}::${file##*/} ではなく pyproject.toml と uv.lock で依存を管理してください（https://docs.astral.sh/uv/guides/migration/pip-to-project/）"
+            echo "::error file=$(escape_property "${file}")::$(escape "${file##*/}") ではなく pyproject.toml と uv.lock で依存を管理してください（https://docs.astral.sh/uv/guides/migration/pip-to-project/）"
             status=1
           done < <(git ls-files -z -- ':(glob)**/requirements*.txt' ':(glob)**/setup.py' ':(glob)**/setup.cfg' ':(glob)**/Pipfile' ':(glob)**/Pipfile.lock' ':(glob)**/poetry.lock' ':(glob)**/pdm.lock' "${pathspecs[@]}")
           # 祖先の uv.lock に頼る場合は、そのプロジェクトが lock に記録されている（= workspace の member である）ことを確認する。
@@ -206,7 +225,7 @@ jobs:
             while [ ! -e "${lock}/uv.lock" ] && [ "${lock}" != . ]; do lock=$(dirname "${lock}"); done
             if [ "${lock}" = . ]; then rel="${dir}"; else rel=${dir#"${lock}/"}; fi
             if grep -qsF "editable = \"${rel}\"" "${lock}/uv.lock" || grep -qsF "virtual = \"${rel}\"" "${lock}/uv.lock"; then continue; fi
-            echo "::error file=${pyproject}::uv.lock に含まれていません。uv lock を実行して uv.lock をコミットするか、workspace の members に追加してください（https://docs.astral.sh/uv/concepts/projects/workspaces/）"
+            echo "::error file=$(escape_property "${pyproject}")::uv.lock に含まれていません。uv lock を実行して uv.lock をコミットするか、workspace の members に追加してください（https://docs.astral.sh/uv/concepts/projects/workspaces/）"
             status=1
           done < <(git grep -lzE '^\[(project|tool\.poetry|tool\.uv\.workspace)\]' -- ':(glob)**/pyproject.toml' "${pathspecs[@]}" || true)
           exit "${status}"
@@ -230,20 +249,22 @@ jobs:
         uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
         with:
           version: ${{ env.UV_VERSION }}
-          enable-cache: false
+          # ruff の wheel を PR 間で再利用する（キーが完全一致すると保存し直さないため版を含める）
+          enable-cache: true
+          cache-suffix: py-check-ruff-${{ env.RUFF_VERSION }}
 
       - name: "ruff check"
         shell: bash
         run: |
           set -euo pipefail
-          uvx --no-config --python 3.12 "ruff@${RUFF_VERSION}" check --no-fix --output-format=github .
+          uvx --no-config "ruff@${RUFF_VERSION}" check --no-fix --output-format=github .
 
       - name: "ruff format"
         if: ${{ !cancelled() && steps.uv.outcome == 'success' }}
         shell: bash
         run: |
           set -euo pipefail
-          uvx --no-config --python 3.12 "ruff@${RUFF_VERSION}" format --check --diff .
+          uvx --no-config "ruff@${RUFF_VERSION}" format --check --diff .
 
   project:
     name: "🚧 型・依存関係を検査 (${{ matrix.project }})"
@@ -346,7 +367,7 @@ jobs:
           fi
           status=0
           for member in "${members[@]}"; do
-            echo "deptry ${member}"
+            echo "deptry ${member//$'\n'/%0A}"
             (
               cd "${member}" || exit 1
               # ソースルート配下の自パッケージを自前として渡す（ルート直下のパッケージは deptry が自動で判定する）。
