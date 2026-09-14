@@ -420,19 +420,6 @@ renovatebot/github-action@*
 
 </details>
 
-<details><summary><b>本リポジトリの Access(他リポジトリからのワークフロー参照許可)</b></summary>
-
-🔗 `github-workflows` → Settings → Actions → General → **Access**
-
-| 設定項目 | 値 |
-|:--------|:--|
-| Access | `Accessible from repositories in the '<org>' organization` |
-
-- 本リポジトリは private のため、この設定がないと他リポジトリから必須ワークフロー(2.3〜2.4・2.7)も Claude の reusable workflow(「4.」)も参照できない
-- private リポジトリのワークフローを参照できるのは**同じ org の private リポジトリのみ**。public リポジトリや他 org からは呼び出せない
-
-</details>
-
 ---
 ## 4. 🧠 Claude レビューワークフロー
 
@@ -448,7 +435,9 @@ PR のコメント(`/code-review` / `/security-review`)で Claude Code にレビ
 | `ANTHROPIC_API_KEY` | Anthropic API キー |
 
 - **どちらか一方のみ**登録する
-- Repository access は `All repositories` か `Private repositories`。対象リポジトリから参照できないとレビューは失敗し、進捗コメントに表示される
+- Repository access は `Private repositories` にする。public リポジトリにもリポジトリシークレットとして登録しない
+  - public リポジトリでは fork からの PR にもメンバーのコメントでレビューが走り、PR の差分に仕込まれた指示で Claude にトークンを読み出させる経路が残るため
+  - シークレットを参照できないリポジトリではレビューは失敗し、進捗コメントに表示される
 
 </details>
 
@@ -464,7 +453,6 @@ action はこの App のトークンで進捗コメントやインラインコ�
 | 設定 | 参照 |
 |:----|:----|
 | `anthropics/claude-code-action` / `oven-sh/setup-bun` の実行許可 | 「3.」 Actions permissions |
-| 他リポジトリからの reusable workflow 参照 | 「3.」 本リポジトリの Access |
 | `claude-*.yml` の変更に security チームの承認を必須化 | 「2.」ルールセット「🛠️ 検知ワークフロー変更の承認必須化」(File patterns `.github/workflows/**` で自動的に対象) |
 
 </details>
