@@ -11,5 +11,12 @@
       "versioningTemplate": "semver",
       "extractVersionTemplate": "^v(?<version>.*)$"
     }
+  ],
+  "packageRules": [
+    {
+      "description": "Bun のリリースタグは bun-v プレフィックス付きのためバージョン抽出を上書きする",
+      "matchPackageNames": ["oven-sh/bun"],
+      "extractVersion": "^bun-v(?<version>.*)$"
+    }
   ]
 }

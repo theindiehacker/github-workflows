@@ -1,0 +1,129 @@
+name: "🔷 typescript"
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: typescript-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: "TypeScript を検査"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: "検査対象を判定"
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d  # v4.0.3
+        with:
+          filters: |
+            typescript:
+              - "**/*.ts"
+              - "**/*.tsx"
+              - "**/*.mts"
+              - "**/*.cts"
+              - "**/package.json"
+              - "**/bun.lock"
+              - "**/bun.lockb"
+              - "**/tsconfig.json"
+              - "**/biome.json"
+              - "**/biome.jsonc"
+              - "**/knip.json"
+              - "**/knip.jsonc"
+              - "**/knip.ts"
+
+      - name: "Checkout"
+        if: steps.filter.outputs.typescript == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: "Install bun"
+        if: steps.filter.outputs.typescript == 'true'
+        shell: bash
+        env:
+          # renovate: datasource=github-release-attachments depName=oven-sh/bun
+          VERSION: 1.4.2
+          SHA256: 36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913
+        run: |
+          set -euo pipefail
+          ARCHIVE="bun-linux-x64.zip"
+          curl -sSfL -o "$ARCHIVE" "https://github.com/oven-sh/bun/releases/download/bun-v${VERSION}/${ARCHIVE}"
+
+          echo "${SHA256}  ${ARCHIVE}" | sha256sum -c -
+
+          sudo unzip -o -j "$ARCHIVE" "bun-linux-x64/bun" -d /usr/local/bin
+          sudo chmod +x /usr/local/bin/bun
+          rm -f "$ARCHIVE"
+          bun --version
+
+      - name: "検査対象を収集"
+        if: steps.filter.outputs.typescript == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          find . \( -path ./.git -o -name node_modules \) -prune -o -name package.json -print \
+            | sed 's|^\./||; s|^package\.json$|.|; s|/package\.json$||' | sort \
+            | awk '{ for (r in roots) if (r == "." || index($0, r "/") == 1) next; roots[$0]; print }' \
+            > "${RUNNER_TEMP}/roots.txt"
+          find . \( -path ./.git -o -name node_modules \) -prune -o -name tsconfig.json -print \
+            | sed 's|^\./||; s|^tsconfig\.json$|.|; s|/tsconfig\.json$||' | sort \
+            > "${RUNNER_TEMP}/tsconfigs.txt"
+          cat "${RUNNER_TEMP}/roots.txt" "${RUNNER_TEMP}/tsconfigs.txt"
+
+      - name: "bun install"
+        id: install
+        if: steps.filter.outputs.typescript == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r root; do
+            echo "::group::${root}"
+            (cd "${root}" && bun install --frozen-lockfile)
+            echo "::endgroup::"
+          done < "${RUNNER_TEMP}/roots.txt"
+
+      - name: "biome ci"
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=0
+          while IFS= read -r root; do
+            echo "::group::${root}"
+            (cd "${root}" && bun run biome ci --reporter=github .) || status=1
+            echo "::endgroup::"
+          done < "${RUNNER_TEMP}/roots.txt"
+          exit "${status}"
+
+      - name: "knip"
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=0
+          while IFS= read -r root; do
+            echo "::group::${root}"
+            (cd "${root}" && bun run knip --dependencies) || status=1
+            echo "::endgroup::"
+          done < "${RUNNER_TEMP}/roots.txt"
+          exit "${status}"
+
+      - name: "tsc"
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=0
+          while IFS= read -r dir; do
+            echo "::group::${dir}"
+            (cd "${dir}" && bun run tsc --noEmit) || status=1
+            echo "::endgroup::"
+          done < "${RUNNER_TEMP}/tsconfigs.txt"
+          exit "${status}"
