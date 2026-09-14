@@ -333,13 +333,13 @@ Rules セクションで以下のチェックを外す:
 | `github-workflows` | `main` | `.github/workflows/shellcheck.yml` | シェルスクリプトの lint |
 | `github-workflows` | `main` | `.github/workflows/py-check.yml` | Python の規約(uv での依存管理)・lint・書式・型・依存関係(型と依存関係は `uv.lock` のあるディレクトリごと) |
 
-> 必須ワークフローは対象 repo のコードを実行しない解析に揃える。型・依存関係の検査に導入済みの環境を要する `py-check.yml` の依存導入(`uv sync`)だけが例外。
-> ランナーで依存を導入できない repo(private index の認証が必要など)は、このルールセットの対象から外して運用する
+> 必須ワークフローは対象 repo のコードを実行しない解析に揃える。`py-check.yml` の型・依存関係の検査だけが例外で、`uv sync` による依存導入と、その環境上で動く mypy(プラグインを含む) / lint-imports / deptry が対象 repo のコードに触れる。
+> ランナーで依存を導入できない repo(private index の認証が必要など)は、このルールセットの `Target repositories` を `Dynamic list by property` 等に変更して対象から外すか、`Bypass list` に追加して運用する
 
 `py-check.yml` は、対象 repo の `.github/python.yml` (任意)で検査の範囲を宣言できる。ファイルが無ければ既定値で動作する。
 
 ```yaml
-# 検査対象から外すディレクトリ。fixture やサンプルのプロジェクトなど
+# 規約の検査と matrix の対象から外すディレクトリ。fixture やサンプルのプロジェクトなど
 exclude:
   - tests/fixtures/sample
 # 自パッケージの置き場(既定: src)。lint-imports の PYTHONPATH と deptry の known_first_party に使う
@@ -349,7 +349,7 @@ source-roots:
 
 | 項目 | 既定値 | 補足 |
 |:-----|:------|:----|
-| `exclude` | 無し | 規約ジョブの走査と `uv.lock` の列挙(matrix)の両方に効く。実在するディレクトリのパスのみ(ワイルドカード不可)で、すべてのプロジェクトを除外するとエラーになる |
+| `exclude` | 無し | 規約ジョブの走査と `uv.lock` の列挙(matrix)に効く(ruff / mypy / deptry 自体の除外は各ツールの設定で行う)。実在するディレクトリのパスのみ(ワイルドカード不可)で、すべてのプロジェクトを除外するとエラーになる |
 | `source-roots` | `["src"]` | ソースルート直下の `__init__.py` を持つディレクトリを自パッケージとして扱う |
 
 ※ 検査そのものを止める項目は用意していない(必須チェックを PR 側から無効化できてしまうため)。ランナーで検査できない repo は「✏️ スタイルチェック」ルールセットの対象から外して運用する

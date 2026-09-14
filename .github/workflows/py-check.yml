@@ -89,8 +89,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # 設定の読み取りと uv.lock の列挙（-z のまま扱う。改行や非 ASCII を含むパスが壊れるため）
-          uv run --no-project --python '>=3.11' --with "pyyaml==${PYYAML_VERSION}" python - <<'EOF'
+          # 設定の読み取りと uv.lock の列挙（-z のまま扱う。改行や非 ASCII を含むパスが壊れるため）。
+          # --no-config で対象 repo の uv.toml を読ませない（index を差し替えられると導入するパッケージのコードが動く）
+          uv run --no-config --no-project --python '>=3.11' --with "pyyaml==${PYYAML_VERSION}" python - <<'EOF'
           import json
           import os
           import subprocess
@@ -109,7 +110,8 @@ jobs:
 
 
           def values(key, default=()):
-              value = config.get(key, list(default))
+              # キーだけ残して中身をコメントアウトした場合（None）は既定値として扱う
+              value = config.get(key) or list(default)
               if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
                   fail(f"{key} は文字列のリストで指定してください")
               return value
@@ -130,6 +132,8 @@ jobs:
 
 
           # typo で検査対象が黙って変わらないよう、未知のキーはエラーにする
+          if not isinstance(config, dict):
+              fail("キーと値の対応（mapping）で記述してください")
           for key in config:
               if key not in ("exclude", "source-roots"):
                   fail(f"未知のキーです: {key}")
@@ -176,7 +180,7 @@ jobs:
           set -euo pipefail
           status=0
           mapfile -t pathspecs < <(jq -r '.[] | ":(exclude)" + .' <<< "${EXCLUDE}")
-          # pyproject.toml を持つ repo では、その隣にある依存ファイルだけを対象にする（docs/ や ci/ の pin ファイルは対象外）
+          # requirements*.txt は pyproject.toml の隣にあるものだけを対象にする（docs/ や ci/ の pin ファイルは対象外）
           pyprojects=$(git ls-files -- ':(glob)**/pyproject.toml')
           while IFS= read -r -d '' file; do
             dir=$(dirname "${file}")
@@ -193,13 +197,16 @@ jobs:
             echo "::error file=${file}::${file##*/} ではなく pyproject.toml と uv.lock で依存を管理してください（https://docs.astral.sh/uv/guides/migration/pip-to-project/）"
             status=1
           done < <(git ls-files -z -- ':(glob)**/requirements*.txt' ':(glob)**/setup.py' ':(glob)**/setup.cfg' ':(glob)**/Pipfile' ':(glob)**/Pipfile.lock' ':(glob)**/poetry.lock' ':(glob)**/pdm.lock' "${pathspecs[@]}")
-          # workspace のメンバーは、workspace を宣言する祖先の uv.lock を使う。lock が最新かは依存関係の導入時に uv が判定する
+          # 祖先の uv.lock に頼る場合は、そのプロジェクトが lock に記録されている（= workspace の member である）ことを確認する。
+          # lock が最新かは依存関係の導入時に uv が判定する
           while IFS= read -r -d '' pyproject; do
             dir=$(dirname "${pyproject}")
+            if [ -e "${dir}/uv.lock" ]; then continue; fi
             lock="${dir}"
             while [ ! -e "${lock}/uv.lock" ] && [ "${lock}" != . ]; do lock=$(dirname "${lock}"); done
-            if [ -e "${lock}/uv.lock" ] && { [ "${lock}" = "${dir}" ] || grep -qsE '^\[tool\.uv\.workspace\]' "${lock}/pyproject.toml"; }; then continue; fi
-            echo "::error file=${pyproject}::uv.lock がありません。uv lock を実行して uv.lock をコミットしてください（workspace のメンバーはルートの pyproject.toml に [tool.uv.workspace] を宣言する: https://docs.astral.sh/uv/concepts/projects/workspaces/）"
+            if [ "${lock}" = . ]; then rel="${dir}"; else rel=${dir#"${lock}/"}; fi
+            if grep -qsF "editable = \"${rel}\"" "${lock}/uv.lock" || grep -qsF "virtual = \"${rel}\"" "${lock}/uv.lock"; then continue; fi
+            echo "::error file=${pyproject}::uv.lock に含まれていません。uv lock を実行して uv.lock をコミットするか、workspace の members に追加してください（https://docs.astral.sh/uv/concepts/projects/workspaces/）"
             status=1
           done < <(git grep -lzE '^\[(project|tool\.poetry|tool\.uv\.workspace)\]' -- ':(glob)**/pyproject.toml' "${pathspecs[@]}" || true)
           exit "${status}"
@@ -229,14 +236,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          uvx --python 3.12 "ruff@${RUFF_VERSION}" check --no-fix --output-format=github .
+          uvx --no-config --python 3.12 "ruff@${RUFF_VERSION}" check --no-fix --output-format=github .
 
       - name: "ruff format"
         if: ${{ !cancelled() && steps.uv.outcome == 'success' }}
         shell: bash
         run: |
           set -euo pipefail
-          uvx --python 3.12 "ruff@${RUFF_VERSION}" format --check --diff .
+          uvx --no-config --python 3.12 "ruff@${RUFF_VERSION}" format --check --diff .
 
   project:
     name: "🚧 型・依存関係を検査 (${{ matrix.project }})"
@@ -330,12 +337,13 @@ jobs:
           SOURCE_ROOTS: ${{ needs.detect.outputs.roots }}
         run: |
           set -euo pipefail
-          # uv workspace は、依存を宣言する単位であるメンバーごとに検査する
+          # uv workspace は、依存を宣言する単位であるメンバーごとに検査する（[project] を持たない virtual root は列挙されない）
           workspace=$(uv workspace list --paths)
-          # [project] を持たないルート（virtual root）はメンバーを内包するため対象外
-          if ! grep -qsE '^\[project\]' pyproject.toml; then workspace=$(grep -vxF "${PWD}" <<< "${workspace}" || true); fi
           mapfile -t members < <(grep -v '^[[:space:]]*$' <<< "${workspace}" || true)
-          if [ "${#members[@]}" -eq 0 ]; then members=(.); fi
+          if [ "${#members[@]}" -eq 0 ]; then
+            echo "::notice::workspace にメンバーが無いため skip"
+            exit 0
+          fi
           status=0
           for member in "${members[@]}"; do
             echo "deptry ${member}"
@@ -347,7 +355,7 @@ jobs:
               while IFS= read -r package; do
                 if [ -n "${package}" ]; then args+=(--known-first-party "${package}"); fi
               done < <(
-                if [ -e pyproject.toml ]; then uv run --no-project --python '>=3.11' python -c 'import tomllib; print(*tomllib.load(open("pyproject.toml", "rb")).get("tool", {}).get("deptry", {}).get("known_first_party", []), sep="\n")' || true; fi
+                if [ -e pyproject.toml ]; then uv run --no-config --no-project --python '>=3.11' python -c 'import tomllib; print(*tomllib.load(open("pyproject.toml", "rb")).get("tool", {}).get("deptry", {}).get("known_first_party", []), sep="\n")' || true; fi
                 while IFS= read -r root; do
                   git ls-files -z -- ":(glob)${root}/*/__init__.py" | while IFS= read -r -d '' init; do package=$(dirname "${init}"); echo "${package##*/}"; done
                 done < <(jq -r '.[]' <<< "${SOURCE_ROOTS}")
