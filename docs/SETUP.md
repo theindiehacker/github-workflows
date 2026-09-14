@@ -440,19 +440,18 @@ renovatebot/github-action@*
 
 PR のコメント(`/code-review` / `/security-review`)で Claude Code にレビューさせる reusable workflow を使うための設定。
 
-<details><summary><b>レビュー結果の見かた(approve / request changes)</b></summary>
+<details><summary><b>コードレビュー結果の見かた(approve / request changes)</b></summary>
 
-各レビューは指摘の投稿に加えて、マージ可否の判定を **PR レビュー**として送信する。
+**コードレビュー(`/code-review`)のみ**、指摘の投稿に加えてマージ可否の判定を **PR レビュー**として送信する。
+セキュリティレビュー(`/security-review`)は指摘の投稿のみで、PR レビューは送信しない。
 
 | 判定 | PR 上の表示 | 意味 |
 |:----|:----------|:----|
 | approve | ✅ Approved | 修正必須の指摘なし。マージしてよい |
 | request changes | ⛔ Changes requested | 修正必須の指摘あり。修正して再レビューが必要 |
-| comment | 💬 Commented | 判定できなかった(レビュー失敗時)、または下記の承認保留時 |
+| comment | 💬 Commented | レビューが失敗し、判定できなかった |
 
-- 再レビューはコマンド(`/code-review` / `/security-review`)を再度コメントする。新しいレビューが前回の判定を上書きする
-- コードレビューとセキュリティレビューは同じ bot から送られるため、後から送ったレビューで PR の状態が上書きされる。
-  **もう一方が変更要求中のときは approve を送らず comment に落とす**ことで、変更要求が意図せず解除されるのを防いでいる
+- 再レビューは `/code-review` を再度コメントする。新しいレビューが前回の判定を上書きする
 
 > ⚠️ bot(`github-actions`)の承認もルールセットの **Required approvals** にカウントされるため、
 > Claude の approve だけではマージできないよう「2.」ルールセット「✅ PR の承認を必須化」の

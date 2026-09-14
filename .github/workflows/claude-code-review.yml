@@ -102,7 +102,6 @@ jobs:
           # --json-schema で検証済みの判定。レビューが失敗した場合は空になる
           VERDICT: ${{ steps.claude.outputs.structured_output }}
           TITLE: "🧠 Claude コードレビュー"
-          PEER_TITLE: "🧠 Claude セキュリティレビュー"
           HINT: "修正後に `/code-review` とコメントして再レビューしてください。"
         run: |
           set -euo pipefail
@@ -115,15 +114,7 @@ jobs:
               gh pr review "$PR_NUMBER" --request-changes --body "$TITLE ⛔ 再レビューが必要です。$summary $HINT"
               ;;
             approve)
-              # 2 つのレビューは同じ bot が送るため、後から送ったレビューで PR の状態が上書きされる。
-              # もう一方が変更要求中なら、承認で打ち消さずコメントに留める
-              peer="$(gh pr view "$PR_NUMBER" --json reviews \
-                | jq -r --arg t "$PEER_TITLE" '[.reviews[] | select(.body | startswith($t)) | .state] | last // ""')"
-              if [ "$peer" = CHANGES_REQUESTED ]; then
-                gh pr review "$PR_NUMBER" --comment --body "$TITLE ⏸️ 承認を保留しました。$summary (セキュリティレビューが変更要求中のため)"
-              else
-                gh pr review "$PR_NUMBER" --approve --body "$TITLE ✅ マージ可能です。$summary"
-              fi
+              gh pr review "$PR_NUMBER" --approve --body "$TITLE ✅ マージ可能です。$summary"
               ;;
             *)
               gh pr review "$PR_NUMBER" --comment --body "$TITLE ⚠️ レビューを完了できなかったため、マージ可否を判定できませんでした。$HINT"
