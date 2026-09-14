@@ -40,12 +40,9 @@ jobs:
       python: ${{ steps.filter.outputs.python }}
       # uv.lock のあるディレクトリの JSON 配列（例: [".", "backend"]）
       projects: ${{ steps.config.outputs.projects || '[]' }}
-      # 対象 repo の .github/python.yml の内容（skip は実行しない検査名、roots は自パッケージの置き場、exclude は除外する glob）
-      skip: ${{ steps.config.outputs.skip || '[]' }}
+      # 対象 repo の .github/python.yml の内容（roots は自パッケージの置き場、exclude は検査対象から除外する glob）
       roots: ${{ steps.config.outputs.roots || '["src"]' }}
       exclude: ${{ steps.config.outputs.exclude || '[]' }}
-      # 型・依存関係の検査がすべて skip なら依存を導入しない
-      install: ${{ steps.config.outputs.install || 'true' }}
     steps:
       - name: "検査の要否を判定"
         id: filter
@@ -102,7 +99,6 @@ jobs:
 
           import yaml
 
-          CHECKS = ("rule", "lint", "format", "type", "imports", "dependencies")
           config_path = Path(os.environ["PY_CHECK_CONFIG"])
           config = yaml.safe_load(config_path.read_text()) or {} if config_path.is_file() else {}
 
@@ -119,16 +115,11 @@ jobs:
               return value
 
 
-          # typo で検査が黙って無効化されないよう、未知のキー・検査名はエラーにする
+          # typo で検査対象が黙って変わらないよう、未知のキーはエラーにする
           for key in config:
-              if key not in ("exclude", "source-roots", "skip"):
+              if key not in ("exclude", "source-roots"):
                   fail(f"未知のキーです: {key}")
-          exclude, roots, skip = values("exclude"), values("source-roots", ["src"]), values("skip")
-          for name in skip:
-              if name not in CHECKS:
-                  fail(f"skip に指定できない検査です: {name}（{' / '.join(CHECKS)}）")
-          if skip:
-              print(f"::warning file={config_path}::{' / '.join(skip)} を実行しません")
+          exclude, roots = values("exclude"), values("source-roots", ["src"])
           if exclude:
               print(f"::notice file={config_path}::検査対象から除外します: {' / '.join(exclude)}")
 
@@ -136,15 +127,14 @@ jobs:
           locks = subprocess.run(["git", "ls-files", "-z", "--", *pathspecs], capture_output=True, text=True, check=True).stdout
           projects = [str(Path(lock).parent) for lock in locks.split("\0") if lock]
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
-              for key, value in (("projects", projects), ("skip", skip), ("roots", roots), ("exclude", exclude)):
+              for key, value in (("projects", projects), ("roots", roots), ("exclude", exclude)):
                   print(f"{key}={json.dumps(value)}", file=output)
-              print(f"install={json.dumps(not {'type', 'imports', 'dependencies'} <= set(skip))}", file=output)
           EOF
 
   rule:
     name: "📜 規約を検査"
     needs: detect
-    if: needs.detect.outputs.python == 'true' && !contains(fromJSON(needs.detect.outputs.skip), 'rule')
+    if: needs.detect.outputs.python == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -197,7 +187,7 @@ jobs:
   ruff:
     name: "✏️ ruff"
     needs: detect
-    if: needs.detect.outputs.python == 'true' && !(contains(fromJSON(needs.detect.outputs.skip), 'lint') && contains(fromJSON(needs.detect.outputs.skip), 'format'))
+    if: needs.detect.outputs.python == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -216,14 +206,13 @@ jobs:
           enable-cache: false
 
       - name: "ruff check"
-        if: ${{ !contains(fromJSON(needs.detect.outputs.skip), 'lint') }}
         shell: bash
         run: |
           set -euo pipefail
           uvx --python 3.12 "ruff@${RUFF_VERSION}" check --no-fix --output-format=github .
 
       - name: "ruff format"
-        if: ${{ !cancelled() && steps.uv.outcome == 'success' && !contains(fromJSON(needs.detect.outputs.skip), 'format') }}
+        if: ${{ !cancelled() && steps.uv.outcome == 'success' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -272,7 +261,7 @@ jobs:
         # mypy / import-linter / deptry は導入済みの環境を要するため uv.lock に従って導入する
         # （docs/SETUP.md の「対象 repo のコードを実行しない」方針の唯一の例外。token は contents: read のみ・credentials も残さない）
         id: deps
-        if: ${{ !cancelled() && steps.uv.outcome == 'success' && needs.detect.outputs.install == 'true' }}
+        if: ${{ !cancelled() && steps.uv.outcome == 'success' }}
         run: |
           set -euo pipefail
           # workspace の全メンバー・extras・dependency-groups まで入れる（不足すると mypy / deptry が誤検知する）。
@@ -283,7 +272,7 @@ jobs:
           uv sync --frozen --all-packages --all-groups || { echo "::error::uv sync に失敗しました。ランナーで依存を導入できない repo（private index 等）は、ルールセットの対象から外してください"; exit 1; }
 
       - name: "🧱 mypy - 型チェック"
-        if: ${{ !cancelled() && steps.deps.outcome == 'success' && !contains(fromJSON(needs.detect.outputs.skip), 'type') }}
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: |
           set -euo pipefail
           if ! uv run --no-sync --with "mypy==${MYPY_VERSION}" mypy .; then
@@ -292,7 +281,7 @@ jobs:
           fi
 
       - name: "➡️ lint-imports - モジュール依存関係を検査"
-        if: ${{ !cancelled() && steps.deps.outcome == 'success' && !contains(fromJSON(needs.detect.outputs.skip), 'imports') }}
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         env:
           SOURCE_ROOTS: ${{ needs.detect.outputs.roots }}
         run: |
@@ -316,7 +305,7 @@ jobs:
           fi
 
       - name: "🗑️ deptry - 不要なパッケージを検知"
-        if: ${{ !cancelled() && steps.deps.outcome == 'success' && !contains(fromJSON(needs.detect.outputs.skip), 'dependencies') }}
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         env:
           SOURCE_ROOTS: ${{ needs.detect.outputs.roots }}
         run: |

@@ -198,7 +198,7 @@ Rules セクションで以下のチェックを外す:
 
 <details><summary><b>「✔️ セキュリティ設定ファイル変更の承認必須化」</b></summary>
 
-> セキュリティ検知の設定ファイル(`.gitleaksignore` / `.trivyignore` など)と、必須チェックの適用範囲を宣言する設定ファイル(`.github/python.yml`)を変更する PR にセキュリティチーム(`security`)の承認を必須化するルール
+> セキュリティ検知の設定ファイル(`.gitleaksignore` / `.trivyignore` など)を変更する PR にセキュリティチーム(`security`)の承認を必須化するルール
 
 | 設定項目 | 値                        |
 |:-------:|:-------------------------|
@@ -235,7 +235,6 @@ Rules セクションで以下のチェックを外す:
 
 File patterns:
 ```
-.github/python.yml
 .gitleaksignore
 .gitleaks.toml
 .trivyignore
@@ -256,7 +255,6 @@ ghalint.yaml
 
 ※ `trivy.yaml`(リポジトリ直下)は Trivy が自動読込する設定ファイルで、`ignorefile` / `ignore-policy` により抑制先を差し替えられるため対象に含める。レビュー時はこの 2 項目が上記対象外のファイルを指していないかを確認する<br/>
 ※ `**/.semgrepignore` は Semgrepignore v2(Semgrep 1.117 以降のデフォルト)でサブディレクトリの `.semgrepignore` も有効になるため対象に含める<br/>
-※ `.github/python.yml` は py-check の検査を repo 側で skip できる設定ファイルのため、検知を弱める変更が通常の承認だけで通らないよう対象に含める<br/>
 ※ zizmor の設定はワークフロー側(`.github/workflows/zizmor.yml` の `--config` / `--no-config`)で `.github/zizmor.yml` に固定しているため、自動探索され得る他パス(リポジトリ直下の `zizmor.yml` 等)の列挙は不要
 
 </details>
@@ -347,18 +345,14 @@ exclude:
 # 自パッケージの置き場(既定: src)。lint-imports の PYTHONPATH と deptry の known_first_party に使う
 source-roots:
   - lib
-# 実行しない検査。rule(規約) / lint(ruff check) / format(ruff format) / type(mypy) / imports(lint-imports) / dependencies(deptry)
-skip:
-  - type
 ```
 
 | 項目 | 既定値 | 補足 |
 |:-----|:------|:----|
 | `exclude` | 無し | 規約ジョブの走査と `uv.lock` の列挙(matrix)の両方に効く |
 | `source-roots` | `["src"]` | ソースルート直下の `__init__.py` を持つディレクトリを自パッケージとして扱う |
-| `skip` | 無し | skip した検査は `::warning` で PR に残る。未知のキー・検査名はエラーにする |
 
-※ 検査を skip できるため、このファイルは「✔️ セキュリティ設定変更の承認必須化」(2.5)の対象に含めている
+※ 検査そのものを止める項目は用意していない(必須チェックを PR 側から無効化できてしまうため)。ランナーで検査できない repo は「✏️ スタイルチェック」ルールセットの対象から外して運用する
 
 - ✅ **Do not require workflows on creation**
 
