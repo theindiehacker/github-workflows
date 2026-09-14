@@ -76,6 +76,14 @@ jobs:
         env:
           # バックグラウンドを有効化しておくとレビューが投稿されずにワークフローが終了するため、無効化
           CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
+          # 判定レビューの送信指示。prompt に書くとスキルの引数 (ARGUMENTS) に混ざるため、
+          # システムプロンプトへの追記として渡す (action が読む環境変数)
+          APPEND_SYSTEM_PROMPT: |
+            レビューを終えたら、必ず mcp__github__create_and_submit_pull_request_review で
+            対象の PR にレビューを送信すること。
+            event は、修正が必要な指摘 (バグ・不具合・仕様違反など) があれば REQUEST_CHANGES、
+            指摘なしまたは nit / optional のみなら APPROVE とする。
+            body は「🧠 Claude コードレビュー <結論> <理由を 1〜2 文>」の 1 行にすること。
         with:
           # どちらか一方だけが組織シークレットに登録されている前提。空文字は action 側で未設定として扱われる
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -85,5 +93,7 @@ jobs:
           claude_args: |
             --model ${{ steps.preflight.outputs.model }}
             --max-turns 200
-            --allowedTools "mcp__github_inline_comment__create_inline_comment"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,mcp__github__create_and_submit_pull_request_review"
+          # 判定レビューは Claude 自身に送信させる (指示は APPEND_SYSTEM_PROMPT)。action の Claude App
+          # トークンで動く MCP を経由するため、投稿者が claude[bot] になり他のコメントと一致する
           prompt: '/code-review --comment ${{ env.PR_NUMBER }}'
