@@ -453,7 +453,6 @@ PR のコメント(`/code-review` / `/security-review`)で Claude Code にレビ
 
 - レビューは `claude[bot]`(Claude GitHub App)として送信される
 - 再レビューは `/code-review` を再度コメントする。新しいレビューが前回の判定を上書きする
-- レビューが失敗するなどして approve / request changes が送信されなかった場合も、`/code-review` を再実行する
 
 > ⚠️ このレビューは `claude[bot]`(Claude GitHub App)として送信される。GitHub App のレビューは
 > ルールセットの **Required approvals** にカウントされ、変更要求はマージをブロックすると報告されている
