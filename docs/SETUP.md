@@ -425,6 +425,26 @@ renovatebot/github-action@*
 
 PR のコメント(`/code-review` / `/security-review`)で Claude Code にレビューさせる reusable workflow を使うための設定。
 
+<details><summary><b>レビュー結果の見かた(approve / request changes)</b></summary>
+
+各レビューは指摘の投稿に加えて、マージ可否の判定を **PR レビュー**として送信する。
+
+| 判定 | PR 上の表示 | 意味 |
+|:----|:----------|:----|
+| approve | ✅ Approved | 修正必須の指摘なし。マージしてよい |
+| request changes | ⛔ Changes requested | 修正必須の指摘あり。修正して再レビューが必要 |
+| comment | 💬 Commented | 判定できなかった(レビュー失敗時)、または下記の承認保留時 |
+
+- 再レビューはコマンド(`/code-review` / `/security-review`)を再度コメントする。新しいレビューが前回の判定を上書きする
+- コードレビューとセキュリティレビューは同じ bot から送られるため、後から送ったレビューで PR の状態が上書きされる。
+  **もう一方が変更要求中のときは approve を送らず comment に落とす**ことで、変更要求が意図せず解除されるのを防いでいる
+
+> ⚠️ bot(`github-actions`)の承認もルールセットの **Required approvals** にカウントされる。
+> 人間のレビューを必須にしたい場合は「2.」ルールセット「✅ PR の承認を必須化」で
+> **Require review from Code Owners** を有効化し、各リポジトリに `CODEOWNERS` を配置すること
+
+</details>
+
 <details><summary><b>組織シークレットを登録する</b></summary>
 
 🔗 Organization → Settings → Secrets and variables → Actions → **New organization secret**
