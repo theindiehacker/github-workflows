@@ -339,9 +339,9 @@ Rules セクションで以下のチェックを外す:
 `py-check.yml` は、対象 repo の `.github/python.yml` (任意)で検査の範囲を宣言できる。ファイルが無ければ既定値で動作する。
 
 ```yaml
-# 検査対象から外す(git の pathspec glob)。fixture やサンプルのプロジェクトなど
+# 検査対象から外すディレクトリ。fixture やサンプルのプロジェクトなど
 exclude:
-  - tests/fixtures/**
+  - tests/fixtures/sample
 # 自パッケージの置き場(既定: src)。lint-imports の PYTHONPATH と deptry の known_first_party に使う
 source-roots:
   - lib
@@ -349,7 +349,7 @@ source-roots:
 
 | 項目 | 既定値 | 補足 |
 |:-----|:------|:----|
-| `exclude` | 無し | 規約ジョブの走査と `uv.lock` の列挙(matrix)の両方に効く |
+| `exclude` | 無し | 規約ジョブの走査と `uv.lock` の列挙(matrix)の両方に効く。実在するディレクトリのパスのみ(ワイルドカード不可)で、すべてのプロジェクトを除外するとエラーになる |
 | `source-roots` | `["src"]` | ソースルート直下の `__init__.py` を持つディレクトリを自パッケージとして扱う |
 
 ※ 検査そのものを止める項目は用意していない(必須チェックを PR 側から無効化できてしまうため)。ランナーで検査できない repo は「✏️ スタイルチェック」ルールセットの対象から外して運用する

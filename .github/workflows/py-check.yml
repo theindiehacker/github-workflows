@@ -115,17 +115,37 @@ jobs:
               return value
 
 
+          def directory(key, value):
+              # glob を許すと `**` 一つで全検査を無効化できるため、実在するディレクトリのパスだけを受け付ける
+              if not value or value == "." or value.startswith("/") or set("*?[") & set(value) or ".." in Path(value).parts:
+                  fail(f"{key} はワイルドカードを含まないディレクトリのパスで指定してください: {value}")
+              return value
+
+
+          def find_projects(*pathspecs):
+              locks = subprocess.run(
+                  ["git", "ls-files", "-z", "--", ":(glob)**/uv.lock", *pathspecs], capture_output=True, text=True, check=True
+              ).stdout
+              return [str(Path(lock).parent) for lock in locks.split("\0") if lock]
+
+
           # typo で検査対象が黙って変わらないよう、未知のキーはエラーにする
           for key in config:
               if key not in ("exclude", "source-roots"):
                   fail(f"未知のキーです: {key}")
           exclude, roots = values("exclude"), values("source-roots", ["src"])
+          for path in exclude:
+              if not Path(directory("exclude", path)).is_dir():
+                  fail(f"exclude に指定されたディレクトリがありません: {path}")
+          for path in roots:
+              directory("source-roots", path)
+
+          projects = find_projects(*(f":(exclude){path}" for path in exclude))
+          # 検査対象をすべて除外することはできない（必須チェックを PR 側から無効化できてしまうため）
+          if exclude and not projects and find_projects():
+              fail("exclude で検査対象のプロジェクトがすべて除外されています")
           if exclude:
               print(f"::notice file={config_path}::検査対象から除外します: {' / '.join(exclude)}")
-
-          pathspecs = [":(glob)**/uv.lock", *(f":(glob,exclude){pattern}" for pattern in exclude)]
-          locks = subprocess.run(["git", "ls-files", "-z", "--", *pathspecs], capture_output=True, text=True, check=True).stdout
-          projects = [str(Path(lock).parent) for lock in locks.split("\0") if lock]
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
               for key, value in (("projects", projects), ("roots", roots), ("exclude", exclude)):
                   print(f"{key}={json.dumps(value)}", file=output)
@@ -155,7 +175,7 @@ jobs:
         run: |
           set -euo pipefail
           status=0
-          mapfile -t pathspecs < <(jq -r '.[] | ":(glob,exclude)" + .' <<< "${EXCLUDE}")
+          mapfile -t pathspecs < <(jq -r '.[] | ":(exclude)" + .' <<< "${EXCLUDE}")
           # pyproject.toml を持つ repo では、その隣にある依存ファイルだけを対象にする（docs/ や ci/ の pin ファイルは対象外）
           pyprojects=$(git ls-files -- ':(glob)**/pyproject.toml')
           while IFS= read -r -d '' file; do
