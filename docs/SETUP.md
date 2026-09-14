@@ -139,11 +139,14 @@ Rules セクションで以下のチェックを外す:
 
 #### CODEOWNERS の配置
 
-bot(`github-actions`)の承認も Required approvals にカウントされるため、`Require review from Code Owners` と
-`CODEOWNERS` の組み合わせで「人間の承認」を担保する(bot は code owner になれない)。
+bot の承認が Required approvals にカウントされるかは GitHub のドキュメントに明記がなく、
+bot の種類によって挙動が異なると報告されている(`github-actions[bot]` はカウントされず、専用の GitHub App は
+カウントされる)。将来「4.」のレビューを専用 App から送るよう変更した場合に、bot の承認だけでマージ条件が
+満たされることを防ぐため、`Require review from Code Owners` と `CODEOWNERS` で「人間の承認」を担保する
+(bot は code owner になれない)。
 
 **全リポジトリの default branch に** `.github/CODEOWNERS` を配置すること。配置がないリポジトリでは
-Code Owners のルールが素通りし、「4.」の Claude レビューの承認だけでマージ条件を満たせてしまう。
+Code Owners のルールが素通りする。
 
 ```text
 # 全ファイルをレビュー対象にする
@@ -453,10 +456,11 @@ PR のコメント(`/code-review` / `/security-review`)で Claude Code にレビ
 
 - 再レビューは `/code-review` を再度コメントする。新しいレビューが前回の判定を上書きする
 
-> ⚠️ bot(`github-actions`)の承認もルールセットの **Required approvals** にカウントされるため、
-> Claude の approve だけではマージできないよう「2.」ルールセット「✅ PR の承認を必須化」の
-> **Require review from Code Owners** と `CODEOWNERS` で人間の承認を担保している。
-> `CODEOWNERS` 未配置のリポジトリではこの歯止めが効かないので注意すること
+> ⚠️ このレビューは `github-actions[bot]` として送信される。bot のレビューがルールセットの
+> **Required approvals** や「変更要求によるマージのブロック」に反映されるかは GitHub のドキュメントに明記がなく、
+> `github-actions[bot]` は反映されないと報告されている。**現時点では判定を「表示」として扱い、
+> マージの可否はルールセットと人間のレビューで担保すること**(「2.」の Code Owners 必須化 + `CODEOWNERS`)。
+> 実際の挙動は導入先リポジトリで 1 度確認することを推奨する
 
 </details>
 
