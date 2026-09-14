@@ -450,11 +450,10 @@ PR のコメント(`/code-review` / `/security-review`)で Claude Code にレビ
 |:----|:----------|:----|
 | approve | ✅ Approved | 修正必須の指摘なし。マージしてよい |
 | request changes | ⛔ Changes requested | 修正必須の指摘あり。修正して再レビューが必要 |
-| comment | 💬 Commented | レビューが失敗し、判定できなかった |
 
+- レビューは `claude[bot]`(Claude GitHub App)として送信される
 - 再レビューは `/code-review` を再度コメントする。新しいレビューが前回の判定を上書きする
-- レビューは `claude[bot]`(Claude GitHub App)として送信される。Claude が送信できなかった場合のみ
-  `github-actions[bot]` が代わりに送信する
+- レビューが失敗するなどして approve / request changes が送信されなかった場合も、`/code-review` を再実行する
 
 > ⚠️ このレビューは `claude[bot]`(Claude GitHub App)として送信される。GitHub App のレビューは
 > ルールセットの **Required approvals** にカウントされ、変更要求はマージをブロックすると報告されている

@@ -20,7 +20,6 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
-      # レビュー(approve / request changes)の送信にも必要
       pull-requests: write
       # 進捗コメントの更新は issue comments API 経由なので残す
       issues: write
@@ -73,7 +72,6 @@ jobs:
           persist-credentials: true
 
       - name: Run Claude Code Review
-        id: claude
         uses: anthropics/claude-code-action@0a8d3c9443bbff909ab973b6a17a340b913f229f  # v1.0.221
         env:
           # バックグラウンドを有効化しておくとレビューが投稿されずにワークフローが終了するため、無効化
@@ -96,50 +94,6 @@ jobs:
             --model ${{ steps.preflight.outputs.model }}
             --max-turns 200
             --allowedTools "mcp__github_inline_comment__create_inline_comment,mcp__github__create_and_submit_pull_request_review"
-            --json-schema '{"type":"object","properties":{"verdict":{"type":"string","enum":["approve","request_changes"],"description":"修正が必要な指摘 (バグ・不具合・仕様違反など) が 1 件でもあれば request_changes。指摘なし、または nit / optional の指摘のみなら approve"},"summary":{"type":"string","description":"判定理由を日本語で 1〜2 文"}},"required":["verdict","summary"],"additionalProperties":false}'
           # 判定レビューは Claude 自身に送信させる (指示は APPEND_SYSTEM_PROMPT)。action の Claude App
           # トークンで動く MCP を経由するため、投稿者が claude[bot] になり他のコメントと一致する
           prompt: '/code-review --comment ${{ env.PR_NUMBER }}'
-
-      - name: "🏁 判定レビューの送信を確認し、未送信ならフォールバック"
-        # Claude がレビューを送信できなかった場合に、判定を PR に残す
-        if: ${{ !cancelled() }}
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # checkout に失敗した場合でも gh がリポジトリを特定できるようにする
-          GH_REPO: ${{ github.repository }}
-          # --json-schema で検証済みの判定。レビューが失敗した場合は空になる
-          VERDICT: ${{ steps.claude.outputs.structured_output }}
-          TITLE: "🧠 Claude コードレビュー"
-          HINT: "修正後に `/code-review` とコメントして再レビューしてください。"
-        run: |
-          set -euo pipefail
-
-          # 今回のコミットに対する claude[bot] のレビューがあれば、送信済みなので何もしない
-          head_sha="$(git rev-parse HEAD 2> /dev/null || true)"
-          if [ -n "$head_sha" ] \
-            && gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews" --paginate \
-              | jq -se --arg sha "$head_sha" \
-                  'any(.[][]; .commit_id == $sha and (.user.login | startswith("claude")))' > /dev/null; then
-            echo "claude[bot] が判定レビューを送信済みです"
-            exit 0
-          fi
-
-          # 未送信の場合のみ、github-actions[bot] として送信する
-          verdict="$(jq -r '.verdict // empty' <<< "$VERDICT" 2> /dev/null || true)"
-          summary="$(jq -r '.summary // empty' <<< "$VERDICT" 2> /dev/null || true)"
-
-          case "$verdict" in
-            approve)
-              gh pr review "$PR_NUMBER" --approve --body "$TITLE ✅ マージ可能です。$summary"
-              ;;
-            request_changes)
-              gh pr review "$PR_NUMBER" --request-changes --body "$TITLE ⛔ 再レビューが必要です。$summary $HINT"
-              ;;
-            *)
-              gh pr review "$PR_NUMBER" --comment --body "$TITLE ⚠️ レビューを完了できなかったため、マージ可否を判定できませんでした。$HINT"
-              echo "::error::判定 (structured_output) を取得できませんでした"
-              exit 1
-              ;;
-          esac
