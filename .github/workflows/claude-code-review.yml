@@ -97,52 +97,36 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # --json-schema で検証済みの判定 JSON。モデル生成値のため run: の中で ${{ }} 展開しないこと
+          # checkout に失敗した場合でも gh がリポジトリを特定できるようにする
+          GH_REPO: ${{ github.repository }}
+          # --json-schema で検証済みの判定。レビューが失敗した場合は空になる
           VERDICT: ${{ steps.claude.outputs.structured_output }}
-          SELF_MARKER: "<!-- claude-review: code -->"
-          PEER_MARKER: "<!-- claude-review: security -->"
-          REVIEW_NAME: "🧠 Claude コードレビュー"
-          RERUN_HINT: "修正後に `/code-review` とコメントして再レビューしてください。"
+          TITLE: "🧠 Claude コードレビュー"
+          PEER_TITLE: "🧠 Claude セキュリティレビュー"
+          HINT: "修正後に `/code-review` とコメントして再レビューしてください。"
         run: |
           set -euo pipefail
 
-          reviews_api="repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews"
-
-          # $1: event, $2: 見出し, $3: 本文
-          submit() {
-            jq -n --arg event "$1" \
-                  --arg body "${SELF_MARKER}"$'\n'"## ${REVIEW_NAME} — ${2}"$'\n\n'"${3}" \
-                  '{event: $event, body: $body}' \
-              | gh api "$reviews_api" --method POST --input - > /dev/null
-          }
-
-          # レビュー失敗時は VERDICT が空になる
           verdict="$(jq -r '.verdict // empty' <<< "$VERDICT" 2> /dev/null || true)"
           summary="$(jq -r '.summary // empty' <<< "$VERDICT" 2> /dev/null || true)"
-          [ -n "$summary" ] || summary="(要約なし)"
 
           case "$verdict" in
             request_changes)
-              submit REQUEST_CHANGES "⛔ 再レビューが必要です" "${summary}"$'\n\n'"${RERUN_HINT}"
+              gh pr review "$PR_NUMBER" --request-changes --body "$TITLE ⛔ 再レビューが必要です。$summary $HINT"
               ;;
             approve)
-              # 同じ bot が送るため、最新レビューで状態が上書きされる。
-              # もう一方の Claude レビューが変更要求のままなら、承認で打ち消さない
-              peer_state="$(gh api "$reviews_api" --paginate \
-                | jq -rs --arg m "$PEER_MARKER" \
-                    '[.[][] | select((.body // "") | contains($m)) | .state] | last // empty')"
-              if [ "$peer_state" = "CHANGES_REQUESTED" ]; then
-                submit COMMENT "✅ 指摘なし (承認は保留)" \
-                  "${summary}"$'\n\n'"セキュリティレビューが変更要求中のため、承認は送信していません。"
-              elif ! submit APPROVE "✅ マージ可能です" "$summary"; then
-                # 自身が作成した PR は承認できない等で APPROVE が拒否された場合
-                submit COMMENT "✅ マージ可能です" \
-                  "${summary}"$'\n\n'"(承認レビューを送信できなかったため、コメントとして記録しています)"
+              # 2 つのレビューは同じ bot が送るため、後から送ったレビューで PR の状態が上書きされる。
+              # もう一方が変更要求中なら、承認で打ち消さずコメントに留める
+              peer="$(gh pr view "$PR_NUMBER" --json reviews \
+                | jq -r --arg t "$PEER_TITLE" '[.reviews[] | select(.body | startswith($t)) | .state] | last // ""')"
+              if [ "$peer" = CHANGES_REQUESTED ]; then
+                gh pr review "$PR_NUMBER" --comment --body "$TITLE ⏸️ 承認を保留しました。$summary (セキュリティレビューが変更要求中のため)"
+              else
+                gh pr review "$PR_NUMBER" --approve --body "$TITLE ✅ マージ可能です。$summary"
               fi
               ;;
             *)
-              submit COMMENT "⚠️ 判定できませんでした" \
-                "レビューを完了できなかったため、マージ可否を判定できていません。"$'\n\n'"${RERUN_HINT}"
+              gh pr review "$PR_NUMBER" --comment --body "$TITLE ⚠️ レビューを完了できなかったため、マージ可否を判定できませんでした。$HINT"
               echo "::error::判定 (structured_output) を取得できませんでした"
               exit 1
               ;;
