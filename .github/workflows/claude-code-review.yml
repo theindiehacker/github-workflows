@@ -1,0 +1,99 @@
+name: "🧠 [Claude] Code Review"
+
+on:
+  workflow_call:
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        description: "claude setup-token で発行した OAuth トークン（ANTHROPIC_API_KEY とどちらか一方）"
+        required: false
+      ANTHROPIC_API_KEY:
+        description: "Anthropic API キー（CLAUDE_CODE_OAUTH_TOKEN とどちらか一方）"
+        required: false
+
+# write は job 側でのみ与える
+permissions: {}
+
+jobs:
+  code-review:
+    name: "コードレビュー"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+      # 進捗コメントの更新は issue comments API 経由なので残す
+      issues: write
+      id-token: write
+
+    # workflow レベルに移さないこと (無関係なコメントで実行中のレビューが巻き添えキャンセルされる)
+    concurrency:
+      group: code-review-pr-${{ github.event.issue.number }}
+      cancel-in-progress: true
+
+    # pwn request 対策。条件を緩めないこと
+    # closed / merged PR では action が PR ブランチではなく新規ブランチを作る経路に入るため open のみ
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.issue.state == 'open' &&
+      (github.event.comment.body == '/code-review' || github.event.comment.body == '/code-review fable') &&
+      github.event.comment.user.type != 'Bot' &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+
+    env:
+      PR_NUMBER: ${{ github.event.issue.number }}
+
+    steps:
+      - name: "🧠 モデル決定"
+        id: preflight
+        shell: bash
+        env:
+          # workflow injection 対策。run: の中で ${{ }} 展開しないこと
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          set -euo pipefail
+
+          case "$COMMENT_BODY" in
+            '/code-review') model=claude-opus-5 ;;
+            '/code-review fable') model=claude-fable-5-1 ;;
+            *)
+              # job の if で完全一致を確認済みのため到達しない
+              echo "::error::想定外のコマンドです"
+              exit 1
+              ;;
+          esac
+          echo "model=$model" >> "$GITHUB_OUTPUT"
+          echo "レビューモデル: $model"
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: refs/pull/${{ env.PR_NUMBER }}/head
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Run Claude Code Review
+        uses: anthropics/claude-code-action@56cf60fde42f7b19c3abfd5c9c48b69a1288461f  # v1.0.222
+        env:
+          # バックグラウンドを有効化しておくとレビューが投稿されずにワークフローが終了するため、無効化
+          CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
+          # 判定レビューの送信指示。prompt に書くとスキルの引数 (ARGUMENTS) に混ざるため、
+          # システムプロンプトへの追記として渡す (action が読む環境変数)
+          APPEND_SYSTEM_PROMPT: |
+            レビューを終えたら、必ず mcp__github__create_and_submit_pull_request_review で
+            対象の PR にレビューを送信すること。
+            event は、修正が必要な指摘 (バグ・不具合・仕様違反など) があれば REQUEST_CHANGES、
+            指摘なしまたは nit / optional のみなら APPROVE とする。
+            body は「🧠 Claude コードレビュー <結論> <理由を 1〜2 文>」の 1 行にすること。
+        with:
+          # どちらか一方だけが組織シークレットに登録されている前提。空文字は action 側で未設定として扱われる
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          track_progress: 'true'
+          show_full_output: false
+          claude_args: |
+            --model ${{ steps.preflight.outputs.model }}
+            --max-turns 200
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,mcp__github__create_and_submit_pull_request_review"
+          # 判定レビューは Claude 自身に送信させる (指示は APPEND_SYSTEM_PROMPT)。action の Claude App
+          # トークンで動く MCP を経由するため、投稿者が claude[bot] になり他のコメントと一致する
+          prompt: '/code-review --comment ${{ env.PR_NUMBER }}'

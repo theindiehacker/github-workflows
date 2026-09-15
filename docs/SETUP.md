@@ -263,6 +263,7 @@ ghalint.yaml
 
 > 必須ワークフローの実体(本リポジトリの `.github/workflows/`)を変更する PR にセキュリティチーム(`security`)の承認を必須化するルール。
 > 必須ワークフロー(2.3〜2.4・2.7)は本リポジトリの `main` 上の定義を参照しているため、検知を弱める変更(severity の引き下げ・`exit-code: 0` 化など)が通常の承認(2.2)だけで通ると org 全体の検知が無効化されてしまう
+> Claude レビューワークフロー(`.github/workflows/claude-*.yml`)も呼び出し側の全リポジトリで write 権限付きのプロンプトとして動くため、同じ File patterns(`.github/workflows/**`)で本ルールの対象になる
 
 | 設定項目 | 値                        |
 |:-------:|:-------------------------|
@@ -414,14 +415,17 @@ Organization → Settings → **Actions** → **General** で以下を設定す�
 | Allow specified actions and reusable workflows | 下記のパターンを登録 |
 
 ```
+anthropics/claude-code-action@*,
 aquasecurity/trivy-action@*,
 docker/setup-buildx-action@*,
 docker/build-push-action@*,
 dorny/paths-filter@*,
+oven-sh/setup-bun@*,
 renovatebot/github-action@*
 ```
 
 ※ 各リポジトリが新しい外部 action を使う場合はこのリストへの追加が必要(SHA ピン留めは各ワークフロー側で行う)。<br/>
+※ `oven-sh/setup-bun` は `anthropics/claude-code-action` が内部で使用する action のため併せて許可する(「4.」)。<br/>
 ※ `actions/create-github-app-token` は「Allow actions created by GitHub」で許可済みのため個別登録は不要。
 
 </details>
@@ -435,5 +439,42 @@ renovatebot/github-action@*
 
 - `permissions:` を明示しているワークフロー(本リポジトリのものを含む)には影響しない
 - 「create and approve pull requests」を無効化することで、`GITHUB_TOKEN` による自己承認で 2.2 / 2.5 / 2.6 の承認必須化が迂回されるのを防ぐ
+
+</details>
+
+---
+## 4. 🧠 Claude レビューワークフロー
+
+PR のコメント(`/code-review` / `/security-review`)で Claude Code にレビューさせる reusable workflow を使うための設定。
+
+<details><summary><b>組織シークレットを登録する</b></summary>
+
+🔗 Organization → Settings → Secrets and variables → Actions → **New organization secret**
+
+| Name | 値 |
+|:-----|:--|
+| `CLAUDE_CODE_OAUTH_TOKEN` | `claude setup-token` で発行した OAuth トークン(Pro / Max プラン) |
+| `ANTHROPIC_API_KEY` | Anthropic API キー |
+
+- **どちらか一方のみ**登録する
+- Repository access は `Private repositories` にする。public リポジトリにもリポジトリシークレットとして登録しない
+  - public リポジトリでは fork からの PR にもメンバーのコメントでレビューが走り、PR の差分に仕込まれた指示で Claude にトークンを読み出させる経路が残るため
+  - シークレットを参照できないリポジトリではレビューは失敗し、進捗コメントに表示される
+
+</details>
+
+<details><summary><b>Claude GitHub App をインストールする</b></summary>
+
+https://github.com/apps/claude を Organization にインストールし、Repository access を `All repositories` にする(新規リポジトリも自動で対象)。
+action はこの App のトークンで進捗コメントやインラインコメントを投稿する。
+
+</details>
+
+<details><summary><b>前提となる他の設定</b></summary>
+
+| 設定 | 参照 |
+|:----|:----|
+| `anthropics/claude-code-action` / `oven-sh/setup-bun` の実行許可 | 「3.」 Actions permissions |
+| `claude-*.yml` の変更に security チームの承認を必須化 | 「2.」ルールセット「🛠️ 検知ワークフロー変更の承認必須化」(File patterns `.github/workflows/**` で自動的に対象) |
 
 </details>
