@@ -1,0 +1,302 @@
+name: "🐍 py-check"
+
+# Python のコードと依存管理を検査する。
+# ⚠️ 必須ワークフローは on: のフィルタが無視され全 PR で起動するため、対象の判定は detect ジョブで行う
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions: {}
+
+# 同一 PR に連投された run のみ束ねて追い越しキャンセル
+concurrency:
+  group: py-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  # ツール版は対象 repo の宣言を読まず中央で固定する（2 桁の版が float に化けないよう引用符で囲む）
+  # renovate: datasource=pypi depName=uv
+  UV_VERSION: "0.12.13"
+  # renovate: datasource=pypi depName=ruff
+  RUFF_VERSION: "0.16.7"
+  # renovate: datasource=pypi depName=mypy
+  MYPY_VERSION: "2.3.1"
+  # renovate: datasource=pypi depName=import-linter
+  IMPORT_LINTER_VERSION: "2.15"
+  # renovate: datasource=pypi depName=deptry
+  DEPTRY_VERSION: "0.25.1"
+
+jobs:
+  detect:
+    name: "検査対象を検出"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read  # paths-filter の変更ファイル一覧取得に必要
+    outputs:
+      python: ${{ steps.filter.outputs.python }}
+      # uv.lock のあるディレクトリの JSON 配列（例: [".", "backend"]）
+      projects: ${{ steps.projects.outputs.projects || '[]' }}
+    steps:
+      - name: "検査の要否を判定"
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d  # v4.0.3
+        with:
+          # 削除も対象（削除したモジュールを import する側や、設定の削除で結果が変わる）
+          filters: |
+            python:
+              - "**/*.py"
+              - "**/*.pyi"
+              - "**/ruff.toml"
+              - "**/.ruff.toml"
+              - "**/pyproject.toml"
+              - "**/mypy.ini"
+              - "**/.mypy.ini"
+              - "**/setup.cfg"
+              - "**/.importlinter"
+              - "**/uv.lock"
+              - "**/uv.toml"
+              - "**/.python-version"
+              - "**/requirements*.txt"
+              - "**/Pipfile"
+              - "**/Pipfile.lock"
+              - "**/poetry.lock"
+              - "**/pdm.lock"
+
+      - name: "Checkout"
+        if: steps.filter.outputs.python == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: "uv.lock のあるディレクトリを列挙"
+        id: projects
+        if: steps.filter.outputs.python == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # -z のまま扱う（改行や非 ASCII を含むパスが壊れるため）。fixture やサンプルは検査対象にしないため tests / fixtures 配下は除く
+          projects=()
+          excluded=()
+          while IFS= read -r -d '' lock; do
+            dir=${lock%uv.lock}; dir=${dir%/}; dir=${dir:-.}
+            case "/${dir}/" in */tests/*|*/fixtures/*) excluded+=("${dir}") ;; *) projects+=("${dir}") ;; esac
+          done < <(git ls-files -z -- ':(glob)**/uv.lock')
+          if [ "${#excluded[@]}" -gt 0 ]; then echo "::notice::tests / fixtures 配下のため検査しません: ${excluded[*]//$'\n'/%0A}"; fi
+          if [ "${#projects[@]}" -eq 0 ]; then json='[]'; else json=$(printf '%s\0' "${projects[@]}" | jq -Rsc 'split("\u0000")[:-1]'); fi
+          echo "projects=${json}" >> "${GITHUB_OUTPUT}"
+
+  rule:
+    name: "📜 規約を検査"
+    needs: detect
+    if: needs.detect.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # git 上のファイルだけを見て判定する（対象 repo のコードは動かさない）
+      - name: "uv で依存を管理しているか"
+        run: |
+          set -euo pipefail
+          # 対象 repo 由来のパスをそのまま埋めるとワークフローコマンドを偽装できるためエスケープする
+          escape() { local value=${1//%/%25}; value=${value//$'\r'/%0D}; printf '%s' "${value//$'\n'/%0A}"; }
+          escape_property() { local value; value=$(escape "$1"); value=${value//:/%3A}; printf '%s' "${value//,/%2C}"; }
+          status=0
+          # fixture やサンプルは規約の対象外（detect ジョブの列挙と揃える）
+          pathspecs=(':(glob,exclude)**/tests/**' ':(glob,exclude)**/fixtures/**')
+          # requirements*.txt は依存管理として使われているものだけを対象にする
+          # （pyproject.toml がある repo ではその隣にあるもの、無い repo は Python コードがあるときだけ）
+          pyprojects=$(git ls-files -- ':(glob)**/pyproject.toml' "${pathspecs[@]}")
+          sources=$(git ls-files -- ':(glob)**/*.py' ':(glob)**/*.pyi' "${pathspecs[@]}")
+          # プロセス置換では git の失敗が伝わらないため、いったんファイルに受ける
+          files=$(mktemp)
+          git ls-files -z -- ':(glob)**/requirements*.txt' ':(glob)**/setup.py' ':(glob)**/setup.cfg' ':(glob)**/Pipfile' ':(glob)**/Pipfile.lock' ':(glob)**/poetry.lock' ':(glob)**/pdm.lock' "${pathspecs[@]}" > "${files}"
+          while IFS= read -r -d '' file; do
+            dir=$(dirname "${file}")
+            case "${file##*/}" in
+              requirements*.txt)
+                if [ -n "${pyprojects}" ]; then
+                  if [ ! -e "${dir}/pyproject.toml" ]; then continue; fi
+                elif [ -z "${sources}" ]; then
+                  continue
+                fi
+                # uv export で書き出したものは配布用の成果物として許可する
+                IFS= read -r first < "${file}" || true
+                case "${first}" in *'autogenerated by uv'*) continue ;; esac ;;
+              # 依存を宣言しない setup.py / setup.cfg は、ビルド定義（C 拡張等）として許可する
+              setup.py|setup.cfg)
+                if ! grep -qE '(install|setup)_requires' "${file}"; then continue; fi ;;
+            esac
+            echo "::error file=$(escape_property "${file}")::$(escape "${file##*/}") ではなく pyproject.toml と uv.lock で依存を管理してください（https://docs.astral.sh/uv/guides/migration/pip-to-project/）"
+            status=1
+          done < "${files}"
+          # 祖先の uv.lock に頼る場合は、そのプロジェクトが lock に記録されている（= workspace の member である）ことを確認する。
+          # lock が最新かは依存関係の導入時に uv が判定する。git grep は該当なしで 1 を返すため、それ以外の失敗だけを止める
+          git grep -lzE '^\[(project|tool\.poetry|tool\.uv\.workspace)\]' -- ':(glob)**/pyproject.toml' "${pathspecs[@]}" > "${files}" || [ "$?" -eq 1 ]
+          while IFS= read -r -d '' pyproject; do
+            dir=$(dirname "${pyproject}")
+            if [ -e "${dir}/uv.lock" ]; then continue; fi
+            lock="${dir}"
+            while [ ! -e "${lock}/uv.lock" ] && [ "${lock}" != . ]; do lock=$(dirname "${lock}"); done
+            if [ "${lock}" = . ]; then rel="${dir}"; else rel=${dir#"${lock}/"}; fi
+            if grep -qsF "editable = \"${rel}\"" "${lock}/uv.lock" || grep -qsF "virtual = \"${rel}\"" "${lock}/uv.lock"; then continue; fi
+            echo "::error file=$(escape_property "${pyproject}")::uv.lock に含まれていません。uv lock を実行して uv.lock をコミットするか、workspace の members に追加してください（https://docs.astral.sh/uv/concepts/projects/workspaces/）"
+            status=1
+          done < "${files}"
+          exit "${status}"
+
+  ruff:
+    name: "✏️ ruff"
+    needs: detect
+    if: needs.detect.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: "Install uv"
+        id: uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          # ruff の wheel を PR 間で再利用する（キーが完全一致すると保存し直さないため版を含める）
+          enable-cache: true
+          cache-suffix: py-check-ruff-${{ env.RUFF_VERSION }}
+
+      - name: "ruff check"
+        shell: bash
+        run: |
+          set -euo pipefail
+          uvx --no-config "ruff@${RUFF_VERSION}" check --no-fix --output-format=github .
+
+      - name: "ruff format"
+        if: ${{ !cancelled() && steps.uv.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          uvx --no-config "ruff@${RUFF_VERSION}" format --check --diff .
+
+  project:
+    name: "🚧 型・依存関係を検査 (${{ matrix.project }})"
+    needs: detect
+    if: needs.detect.outputs.projects != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ${{ fromJSON(needs.detect.outputs.projects) }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ matrix.project }}
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: "Install uv"
+        id: uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          working-directory: ${{ matrix.project }}
+          # 依存のダウンロードを PR 間で再利用する。キーが完全一致すると保存し直さないため、中央で固定する版をすべて含める
+          enable-cache: true
+          cache-suffix: py-check-${{ env.UV_VERSION }}-${{ env.MYPY_VERSION }}-${{ env.IMPORT_LINTER_VERSION }}-${{ env.DEPTRY_VERSION }}
+
+      - name: "uv.lock が pyproject.toml と一致しているか"
+        run: |
+          set -euo pipefail
+          uv lock --check
+
+      # 以降の step は !cancelled() で暗黙の success() を外し、前段が fail しても 3 ツールの結果を 1 run で出す
+
+      - name: "🧰 依存関係を導入"
+        # mypy / import-linter / deptry は導入済みの環境を要するため uv.lock に従って導入する
+        # （docs/SETUP.md の「対象 repo のコードを実行しない」方針の唯一の例外。token は contents: read のみ・credentials も残さない）
+        id: deps
+        if: ${{ !cancelled() && steps.uv.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          # workspace の全メンバー・extras・dependency-groups まで入れる（不足すると mypy / deptry が誤検知する）。
+          # 排他な extras の宣言やビルド失敗で入らなければ、extras を外して続行する
+          if uv sync --frozen --all-packages --all-extras --all-groups; then exit 0; fi
+          echo "::warning::extras を含めた uv sync に失敗したため extras を除いて検査します（extras 限定の依存は deptry が誤検知することがあります）"
+          # 導入できなければ検査を skip せず fail させる（緑のまま「何も検査していない」状態を作らないため）
+          uv sync --frozen --all-packages --all-groups || { echo "::error::uv sync に失敗しました。ランナーで依存を導入できない repo（private index 等）は、ルールセットの対象から外してください"; exit 1; }
+
+      - name: "🧱 mypy - 型チェック"
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          if ! uv run --no-sync --with "mypy==${MYPY_VERSION}" mypy .; then
+            echo "::error::mypy: 「Source file found twice」「Duplicate module named」が出る場合は、pyproject.toml の [tool.mypy] に explicit_package_bases = true（src 等に置くパッケージは mypy_path も）を、検査から外すファイルは exclude を設定してください（https://mypy.readthedocs.io/en/stable/running_mypy.html#mapping-file-paths-to-modules）"
+            exit 1
+          fi
+
+      - name: "➡️ lint-imports - モジュール依存関係を検査"
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          if ! grep -qsE '^\[(tool\.)?importlinter\]' pyproject.toml setup.cfg .importlinter; then
+            echo "::notice::import-linter の設定が無いため skip"
+            exit 0
+          fi
+          # src レイアウトの自パッケージを import できるようにする（ルート直下は lint-imports 自身が sys.path に入れる）
+          if [ -n "$(git ls-files -- ':(glob)src/*/__init__.py')" ]; then export PYTHONPATH="${PWD}/src${PYTHONPATH:+:${PYTHONPATH}}"; fi
+          if ! uv run --no-sync --with "import-linter==${IMPORT_LINTER_VERSION}" lint-imports --no-cache --no-logo; then
+            echo "::error::lint-imports: 「Could not find package」が出る場合は、pyproject.toml に [build-system] を宣言して自パッケージを導入するか、root_package を実在するパッケージに合わせてください（https://import-linter.readthedocs.io/en/stable/usage.html）"
+            exit 1
+          fi
+
+      - name: "🗑️ deptry - 不要なパッケージを検知"
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          # uv workspace は、依存を宣言する単位であるメンバーごとに検査する（[project] を持たない virtual root は列挙されない）
+          workspace=$(uv workspace list --paths)
+          mapfile -t members < <(grep -v '^[[:space:]]*$' <<< "${workspace}" || true)
+          if [ "${#members[@]}" -eq 0 ]; then
+            echo "::notice::workspace にメンバーが無いため skip"
+            exit 0
+          fi
+          status=0
+          for member in "${members[@]}"; do
+            echo "deptry ${member//$'\n'/%0A}"
+            (
+              cd "${member}" || exit 1
+              # src レイアウトの自パッケージを自前として渡す（ルート直下のパッケージは deptry が自動で判定する）。
+              # CLI の指定は [tool.deptry] の known_first_party を上書きするため、その値も合わせて渡す
+              args=()
+              while IFS= read -r package; do
+                if [ -n "${package}" ]; then args+=(--known-first-party "${package}"); fi
+              done < <(
+                if [ -e pyproject.toml ]; then python3 -c 'import tomllib; print(*tomllib.load(open("pyproject.toml", "rb")).get("tool", {}).get("deptry", {}).get("known_first_party", []), sep="\n")' || true; fi
+                git ls-files -z -- ':(glob)src/*/__init__.py' | while IFS= read -r -d '' init; do package=$(dirname "${init}"); echo "${package##*/}"; done
+              )
+              uv run --no-sync --with "deptry==${DEPTRY_VERSION}" deptry . "${args[@]}"
+            ) || status=1
+          done
+          if [ "${status}" -ne 0 ]; then
+            echo "::error::deptry: 自プロジェクトのパッケージ（src/ や app/ 配下など）が DEP001 / DEP003 になる場合は pyproject.toml の [tool.deptry] known_first_party に（https://deptry.com/usage/#known-first-party）、別の uv.lock を持つ入れ子のプロジェクトなど検査から外すディレクトリは extend_exclude に（https://deptry.com/usage/#extend-exclude）追加してください。その他の違反の対処は https://deptry.com/rules-violations/ を参照してください"
+          fi
+          exit "${status}"

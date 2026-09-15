@@ -307,7 +307,7 @@ File patterns:
 
 <details><summary><b>「✏️ スタイルチェック」</b></summary>
 
-> ワークフロー定義の構文チェック(actionlint)、Terraform の lint(tflint)と書式(terraform fmt)、シェルスクリプトの lint(shellcheck)を必須化するルール。セキュリティ検知(2.3〜2.6)とは性質が異なるため別ルールセットで管理する
+> コードのスタイルチェックを必須化するルール。セキュリティ検知(2.3〜2.6)とは性質が異なるため別ルールセットで管理する
 
 | 設定項目 | 値                        |
 |:-------:|:-------------------------|
@@ -326,12 +326,16 @@ Rules セクションで以下のチェックを外す:
 
 - ✅ **Require workflows to pass before merging** (PRマージ前に指定したワークフローの成功を必須にする) — 「Add workflow」から以下を追加:
 
-| Repository | Branch | Workflow |
-|:-----------|:-------|:---------|
-| `github-workflows` | `main` | `.github/workflows/actionlint.yml` |
-| `github-workflows` | `main` | `.github/workflows/tflint.yml` |
-| `github-workflows` | `main` | `.github/workflows/terraform-fmt.yml` |
-| `github-workflows` | `main` | `.github/workflows/shellcheck.yml` |
+| Repository | Branch | Workflow | 検査内容 |
+|:-----------|:-------|:---------|:--------|
+| `github-workflows` | `main` | `.github/workflows/actionlint.yml` | ワークフロー定義の構文 |
+| `github-workflows` | `main` | `.github/workflows/tflint.yml` | Terraform の lint |
+| `github-workflows` | `main` | `.github/workflows/terraform-fmt.yml` | Terraform の書式 |
+| `github-workflows` | `main` | `.github/workflows/shellcheck.yml` | シェルスクリプトの lint |
+| `github-workflows` | `main` | `.github/workflows/py-check.yml` | Python の規約(uv での依存管理)・lint・書式・型・依存関係(型と依存関係は `uv.lock` のあるディレクトリごと) |
+
+> 必須ワークフローは対象 repo のコードを実行しない解析に揃える。`py-check.yml` の型・依存関係の検査だけが例外で、`uv sync` による依存導入と、その環境上で動く mypy(プラグインを含む) / lint-imports / deptry が対象 repo のコードに触れる。
+> ランナーで依存を導入できない repo(private index の認証が必要など)は、このルールセットの `Target repositories` を `Dynamic list by property` 等に変更して対象から外すか、`Bypass list` に追加して運用する
 
 - ✅ **Do not require workflows on creation**
 
