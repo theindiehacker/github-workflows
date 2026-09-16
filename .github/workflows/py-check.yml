@@ -211,7 +211,15 @@ jobs:
       # 検査対象は対象 repo の [tool.mypy] files / packages / modules に委ねる（位置引数を渡すと設定側の宣言が無視される）
       - name: "🧱 mypy - 型チェック"
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
-        run: uv run --no-sync --with "mypy==${MYPY_VERSION}" mypy
+        run: |
+          set -euo pipefail
+          log=$(mktemp)
+          if uv run --no-sync --with "mypy==${MYPY_VERSION}" mypy 2>&1 | tee "${log}"; then exit 0; fi
+          # 対象の宣言が無いと mypy は usage エラー（exit 2）で終わるため、対処方法を出す
+          if grep -qF 'Missing target module' "${log}"; then
+            echo "::error::mypy: 検査対象が宣言されていません。pyproject.toml の [tool.mypy] に files / packages / modules を宣言してください（https://mypy.readthedocs.io/en/stable/config_file.html#confval-files）"
+          fi
+          exit 1
 
       - name: "➡️ lint-imports - モジュール依存関係を検査"
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
