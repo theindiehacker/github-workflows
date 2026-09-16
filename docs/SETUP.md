@@ -313,8 +313,8 @@ File patterns:
 |:-------:|:-------------------------|
 | Ruleset Name | `✏️ スタイルチェック`            |
 | Enforcement status | `Active`                 |
-| Bypass list | 空のまま                     |
-| Target repositories | `All repositories`       |
+| Bypass list | 空のまま(下記「例外運用」を参照)        |
+| Target repositories | `All repositories`(同上)  |
 | Target branches | `Include default branch` |
 
 Rules セクションで以下のチェックを外す:
@@ -332,11 +332,12 @@ Rules セクションで以下のチェックを外す:
 | `github-workflows` | `main` | `.github/workflows/tflint.yml` | Terraform の lint |
 | `github-workflows` | `main` | `.github/workflows/terraform-fmt.yml` | Terraform の書式 |
 | `github-workflows` | `main` | `.github/workflows/shellcheck.yml` | シェルスクリプトの lint |
-| `github-workflows` | `main` | `.github/workflows/py-check.yml` | Python の規約(uv での依存管理)・lint・書式・型・依存関係(型と依存関係は `uv.lock` のあるディレクトリごと) |
+| `github-workflows` | `main` | `.github/workflows/python.yml` | Python の規約(uv での依存管理)・lint・書式・型・依存関係 |
 
-> 必須ワークフローは対象 repo のコードを実行しない解析に揃える。`py-check.yml` の型・依存関係の検査だけが例外で、`uv sync` による依存導入と、その環境上で動く mypy(プラグインを含む) / lint-imports / deptry が対象 repo のコードに触れる。
-> 検査の対象や厳しさ、src レイアウトの自パッケージの解決は、対象 repo の設定ファイル(`mypy.ini` / `[tool.deptry]` / `[build-system]` など)に従う(中央でレイアウトを推測することはしない)。
-> ランナーで依存を導入できない repo(private index の認証が必要など)は、このルールセットの `Target repositories` を `Dynamic list by property` 等に変更して対象から外すか、`Bypass list` に追加して運用する
+> 必須ワークフローは対象 repo のコードを実行しない解析に揃える。`python.yml` の型・依存関係の検査だけが例外で、`uv sync` による依存導入と、その環境上で動く mypy(プラグインを含む) / lint-imports / deptry が対象 repo のコードに触れる。
+> 検査の対象や厳しさ、src レイアウトの自パッケージの解決は、対象 repo の設定ファイル(`mypy.ini` / `[tool.deptry]` / `[build-system]` など)に従う。
+
+**例外運用** : ランナーで依存を導入できない repo(private index の認証が必要など)が出た場合だけ、その repo を `Bypass list` に追加するか、`Target repositories` を `Dynamic list by property` 等に変更して対象から外す。規約・lint・書式の検査も併せて外れる。
 
 - ✅ **Do not require workflows on creation**
 
@@ -411,7 +412,7 @@ renovatebot/github-action@*
 
 ※ 各リポジトリが新しい外部 action を使う場合はこのリストへの追加が必要(SHA ピン留めは各ワークフロー側で行う)。<br/>
 ※ `oven-sh/setup-bun` は `anthropics/claude-code-action` が内部で使用する action のため併せて許可する(「4.」)。<br/>
-※ `astral-sh/ruff-action` / `astral-sh/setup-uv` は `py-check.yml` が使用する。<br/>
+※ `astral-sh/ruff-action` / `astral-sh/setup-uv` は `python.yml` が使用する。<br/>
 ※ `actions/create-github-app-token` は「Allow actions created by GitHub」で許可済みのため個別登録は不要。
 
 </details>
