@@ -335,6 +335,7 @@ Rules セクションで以下のチェックを外す:
 | `github-workflows` | `main` | `.github/workflows/py-check.yml` | Python の規約(uv での依存管理)・lint・書式・型・依存関係(型と依存関係は `uv.lock` のあるディレクトリごと) |
 
 > 必須ワークフローは対象 repo のコードを実行しない解析に揃える。`py-check.yml` の型・依存関係の検査だけが例外で、`uv sync` による依存導入と、その環境上で動く mypy(プラグインを含む) / lint-imports / deptry が対象 repo のコードに触れる。
+> 検査の対象や厳しさ、src レイアウトの自パッケージの解決は、対象 repo の設定ファイル(`mypy.ini` / `[tool.deptry]` / `[build-system]` など)に従う(中央でレイアウトを推測することはしない)。
 > ランナーで依存を導入できない repo(private index の認証が必要など)は、このルールセットの `Target repositories` を `Dynamic list by property` 等に変更して対象から外すか、`Bypass list` に追加して運用する
 
 - ✅ **Do not require workflows on creation**
@@ -399,6 +400,8 @@ Organization → Settings → **Actions** → **General** で以下を設定す�
 ```
 anthropics/claude-code-action@*,
 aquasecurity/trivy-action@*,
+astral-sh/ruff-action@*,
+astral-sh/setup-uv@*,
 docker/setup-buildx-action@*,
 docker/build-push-action@*,
 dorny/paths-filter@*,
@@ -408,6 +411,7 @@ renovatebot/github-action@*
 
 ※ 各リポジトリが新しい外部 action を使う場合はこのリストへの追加が必要(SHA ピン留めは各ワークフロー側で行う)。<br/>
 ※ `oven-sh/setup-bun` は `anthropics/claude-code-action` が内部で使用する action のため併せて許可する(「4.」)。<br/>
+※ `astral-sh/ruff-action` / `astral-sh/setup-uv` は `py-check.yml` が使用する。<br/>
 ※ `actions/create-github-app-token` は「Allow actions created by GitHub」で許可済みのため個別登録は不要。
 
 </details>
