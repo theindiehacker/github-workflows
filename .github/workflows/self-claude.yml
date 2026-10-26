@@ -13,6 +13,10 @@ on:
     types: [submitted]
   issues:
     types: [opened]
+  # 月 1 回、リポジトリ全体のセキュリティ監査をする (手動でも動かせる)
+  schedule:
+    - cron: '17 0 1 * *'
+  workflow_dispatch:
 
 # write は呼び出し先の job に渡す分だけを job 側で与える
 permissions: {}
@@ -42,6 +46,16 @@ jobs:
       issues: write
       id-token: write
     uses: ./.github/workflows/claude-security-review.yml
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+  security-audit:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+      issues: write
+    uses: ./.github/workflows/claude-security-audit.yml
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

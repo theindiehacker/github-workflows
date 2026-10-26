@@ -1,0 +1,8 @@
+# zizmor の設定。変えるときは、org のルールセット「✔️ セキュリティ設定変更の承認必須化」でセキュリティチームの承認が要る
+rules:
+  dangerous-triggers:
+    ignore:
+      # self-claude.yml の issue_comment は、コメントでの依頼 (/code-review・/security-review・@claude) に使う。
+      # 呼び先 (claude.yml・claude-code-review.yml・claude-security-review.yml) が、
+      # 投稿者を author_association (OWNER / MEMBER / COLLABORATOR など) で絞っている
+      - self-claude.yml:8
