@@ -200,6 +200,11 @@ git ls-remote https://github.com/theindiehacker/github-workflows 'refs/tags/v1.0
 
 セキュリティレビューは、コメント (`/security-review`) で頼んだときだけ動く。PR の作成時 (Draft は Ready にしたとき) にも動かすには、`security-review` job の `if` に `code-review` job と同じ `pull_request` の条件を足す (FastShip の `/dev:setup` が足す)。
 
+セキュリティ監査 (`security-audit` job) は、月 1 回 (毎月 1 日 9:17 JST) リポジトリ全体を Claude が監査し、PR のレビューでは見ない前からある問題を `security-audit` ラベルの Issue にする (重大度 HIGH・MEDIUM、1 回に最大 10 件)。
+- 手動では Actions → **🧠 Claude** → **Run workflow** で動かす
+- 指摘が公開されないよう、private / internal のリポジトリでだけ動く
+- 誤検知や許容するリスクは「Close as not planned」で閉じる。次回からは起票されない
+
 > 💡 本リポジトリは `github-workflows` → `devops` → `github-workflows` と改名した。git clone や API は旧名からリダイレクトされるが、`uses:` はリダイレクトされず、旧名の `uses: theindiehacker/devops/...` はワークフローの起動時点で失敗する。そのため `theindiehacker/github-workflows/...` に書き換える（旧名 `devops` でリポジトリを作り直すと参照先が乗っ取られるため、旧名は再利用しない）。ruleset はリポジトリ名ではなく ID で紐付くため、改名後の再設定は不要
 
 ---
