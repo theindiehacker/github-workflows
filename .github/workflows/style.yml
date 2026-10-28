@@ -414,7 +414,8 @@ jobs:
           project: ${{ matrix.project }}
 
   # 対象 repo に求める前提: bun.lock をコミットし、biome / knip / typescript を依存（dependencies か devDependencies）に持つこと。
-  # bun install は devDependencies も入れるため、どちらに置いてもよい（Docker のビルドに要る typescript を dependencies に置く repo がある）
+  # bun install は devDependencies も入れるため、どちらに置いてもよい（Docker のビルドに要る typescript を dependencies に置く repo がある）。
+  # ただし bunfig.toml の [install] で production = true か dev = false にしている repo では devDependencies が入らず、dependencies に置くしかない（docs/SETUP.md「導入時の前提」）
   typescript:
     name: "TypeScript を検査"
     needs: lint
