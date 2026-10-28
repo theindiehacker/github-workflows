@@ -413,7 +413,8 @@ jobs:
           version: ${{ env.DEPTRY_VERSION }}
           project: ${{ matrix.project }}
 
-  # 対象 repo に求める前提: bun.lock をコミットし、biome / knip / typescript を devDependencies に持つこと
+  # 対象 repo に求める前提: bun.lock をコミットし、biome / knip / typescript を依存（dependencies か devDependencies）に持つこと。
+  # bun install は devDependencies も入れるため、どちらに置いてもよい（Docker のビルドに要る typescript を dependencies に置く repo がある）
   typescript:
     name: "TypeScript を検査"
     needs: lint
