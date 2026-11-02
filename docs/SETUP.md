@@ -119,12 +119,12 @@ security チーム（`teams.tf`）は、Gitleaks や Trivy などがセキュリ
 | `bundle-size-measure` / `bundle-size-comment` | フロントエンド（Next.js / Astro）の JS・CSS の gzip 後のサイズの増減を PR にコメント（報告だけで失敗しない） |
 
 > 必須ワークフローは、対象 repo のコードを実行してよい（`style.yml` の `python` / `typescript` job の `uv sync` / `bun install` による依存導入と、その環境上で動く Pyright / lint-imports / deptry / Biome / knip / tsc、`terraform` job の `terraform init` / `validate` / `test` が実行する provider・module、`bundle-size-measure` job の `bun install` とビルドなど）。ただし次を守る。
-> - `permissions` は read のみとし、secrets を使わない（例外: `terraform` job の `terraform init` の step にだけ、private の Module Registry（registry.fastship.jp）の読み取りトークン `REGISTRY_TOKEN` を渡す。PR にコメントする `bundle-size-comment` job にだけ `pull-requests: write` を付ける。この job は checkout せず、PR のコードを動かさない）。トリガーは `pull_request` とし、`pull_request_target` では動かさない
+> - `permissions` は read のみとし、secrets を使わない（例外: `terraform` job にだけ `id-token: write` を付け、private の Module Registry（registry.fastship.jp）の ID トークンを [registry-fastship-action](https://github.com/theindiehacker/registry-fastship-action) で取得して、`terraform init` の step にだけ渡す。fork からの PR では取得できない。PR にコメントする `bundle-size-comment` job にだけ `pull-requests: write` を付ける。この job は checkout せず、PR のコードを動かさない）。トリガーは `pull_request` とし、`pull_request_target` では動かさない
 > - `actions/checkout` は `persist-credentials: false` にする
 > - PR のコードを実行する処理は `lint` と別の job にし、対象のファイルがあるときだけ動かす（常に動く `lint` の job では PR のコードを実行しない）
 > - repo の環境に依存して失敗し得る前提は、下の「導入時の前提」に書く。対応できない repo は「例外運用」で外す
 >
-> この条件なら、PR のコードが動いても、その repo の通常の CI と同じで越えられる権限の境界は無い。
+> この条件なら、PR のコードが動いても、その repo の通常の CI と同じで越えられる権限の境界は無い。`terraform` job の PR のコードは ID トークンを取得できるが、ブランチに push できる人は自分のワークフローでも取得できる（fork からの PR では、どちらも取得できない）。
 >
 > バンドルサイズは、PR のコードを動かす計測の job（`bundle-size-measure`）を read のみにし、その結果を artifact で受け取ってコメントする job（`bundle-size-comment`）だけに `pull-requests: write` を付ける。依存パッケージが侵害されても write のトークンは読めず、コメントの投稿先もその PR に固定される。public repo の fork からの PR では、トークンが read のみになるためコメントされない（マージは止めない）。
 >
@@ -142,7 +142,7 @@ security チーム（`teams.tf`）は、Gitleaks や Trivy などがセキュリ
 7. `terraform test` がクラウドの認証情報を必要とする（認証情報は渡さないため、`command = plan` と `mock_provider` で完結するテストだけが通る）
 8. Terraform 1.16.0（`style.yml` で固定）で動かない `required_version` を宣言している
 9. tflint（`style.yml` の固定設定）の違反がある、または `.tf` に `tflint-ignore` コメントがある（違反は変更したディレクトリのみ検査するが、`tflint-ignore` の禁止は repo 全体が対象）
-10. registry.fastship.jp のモジュールを使っているのに、Organization の secret `REGISTRY_TOKEN` へのアクセスが許可されていない（`terraform init` が 401 で失敗する）
+10. registry.fastship.jp のモジュールを使っているのに、その repo の org が registry.fastship.jp の契約企業に登録されていない、または fork からの PR である（`terraform init` が 401 で失敗する）
 
 バンドルサイズの計測は、サイズが増えても、ビルドの失敗やタイムアウト（40 分）でも fail しないため、前提は無い。ただし次の場合は計測されない、または一部だけが計測される。
 
