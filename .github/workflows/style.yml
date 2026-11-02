@@ -277,6 +277,7 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
+      id-token: write  # registry.fastship.jp の ID トークン（docs/SETUP.md「2.」の例外）
     env:
       TF_IN_AUTOMATION: "1"
       TF_INPUT: "0"
@@ -308,14 +309,21 @@ jobs:
           restore-keys: |
             terraform-plugins-${{ runner.os }}-${{ runner.arch }}-
 
-      # secrets は private の Module Registry（registry.fastship.jp）の読み取りトークンだけを、module の取得のためこの step にだけ渡す
+      # private の Module Registry（registry.fastship.jp）の ID トークン。module の取得のため、terraform init の step にだけ渡す。
+      # fork からの PR では取得できないため、失敗しても続ける（registry を使わない repo には影響しない）
+      - name: "registry.fastship.jp のトークンを取得"
+        id: registry
+        if: steps.dirs.outputs.dirs != '[]'
+        continue-on-error: true
+        uses: theindiehacker/registry-fastship-action@84b7ba2adebf7524343ee48a7540a66ebaeb1a13  # v1.0.0
+
       - name: "terraform init"
         id: init
         if: steps.dirs.outputs.dirs != '[]'
         uses: theindiehacker/github-workflows/.github/actions/terraform-init@a7539182106264f76d6627b37d8eed62cc60cff2
         env:
-          # terraform はこのホストへのリクエストにだけトークンを付ける。secret が無い repo では空になり、registry を使わない repo には影響しない
-          TF_TOKEN_registry_fastship_jp: ${{ secrets.REGISTRY_TOKEN }}
+          # terraform はこのホストへのリクエストにだけトークンを付ける。取得できなかったときは空になり、registry を使わない repo には影響しない
+          TF_TOKEN_registry_fastship_jp: ${{ steps.registry.outputs.token }}
         with:
           dirs: ${{ steps.dirs.outputs.dirs }}
           plugin-cache-dir: ${{ runner.temp }}/terraform-plugin-cache
