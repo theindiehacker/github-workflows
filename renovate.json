@@ -3,7 +3,7 @@
   "minimumReleaseAge": "7 days",
   "customManagers": [
     {
-      "description": "ツール導入 step の VERSION と SHA256（composite action に渡す with: の version と sha256 / digest も）を更新する（SHA256 は release アセットの digest から算出される）。VERSION は引用符付きでも取れる。VERSION には GitHub release のタグ名そのもの（v1.2.3 など）を書く。github-release-attachments の digest 解決は VERSION の値でタグを検索するため、extractVersion で v を剥がすと 404 になる（renovatebot/renovate#45674）。versioningTemplate は semver のため、タグが vX.Y.Z 形式でないツールは packageRules で versioning を上書きすること（semver として解釈できないタグは invalid-value で黙ってスキップされ、エラーも PR も出ない）",
+      "description": "ツール導入 step の VERSION と SHA256（composite action に渡す with: の version と sha256 / digest も）を更新する（SHA256 は release アセットの digest から算出される）。VERSION は引用符付きでも取れる。VERSION には GitHub release のタグ名そのもの（v1.2.3 / bun-v1.2.3 など）を書く。github-release-attachments の digest 解決は VERSION の値でタグを検索するため、extractVersion で v を剥がすと 404 になる（renovatebot/renovate#45674）。versioningTemplate は semver のため、タグが vX.Y.Z 形式でないツールは Bun のように packageRules で versioning を上書きすること（semver として解釈できないタグは invalid-value で黙ってスキップされ、エラーも PR も出ない）",
       "customType": "regex",
       "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.yml$/"],
       "matchStrings": [
@@ -12,11 +12,11 @@
       "versioningTemplate": "semver"
     },
     {
-      "description": "action の with: の version / <名前>-version（SHA256 を書かないもの）を GitHub Releases の最新版に更新する（trivy-action に渡す Trivy の版、setup-bun に渡す Bun の版など。YAML のアンカーの付いた値も取れる）",
+      "description": "action の with: の version（SHA256 を書かないもの）を GitHub Releases の最新版に更新する（trivy-action に渡す Trivy の版など。YAML のアンカーの付いた値も取れる）",
       "customType": "regex",
       "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.yml$/"],
       "matchStrings": [
-        "# renovate: datasource=github-releases depName=(?<depName>[^\\s]+?)\\s+(?:[a-z-]+-)?version:\\s*(?:&[\\w-]+\\s+)?\"?(?<currentValue>[^\\s\"]+)\"?\\s"
+        "# renovate: datasource=github-releases depName=(?<depName>[^\\s]+?)\\s+version:\\s*(?:&[\\w-]+\\s+)?\"?(?<currentValue>[^\\s\"]+)\"?\\s"
       ],
       "datasourceTemplate": "github-releases",
       "versioningTemplate": "semver"
@@ -54,9 +54,9 @@
   ],
   "packageRules": [
     {
-      "description": "Bun のリリースタグは bun-v プレフィックス付きだが、setup-bun の bun-version には版番号だけを書くため、タグから取り出す（canary 等の非リリースタグは除外される）",
+      "description": "Bun のリリースタグは bun-v プレフィックス付きで semver として解釈できないため、regex versioning でバージョンを読み取る（canary 等の非リリースタグは除外される）",
       "matchPackageNames": ["oven-sh/bun"],
-      "extractVersion": "^bun-v(?<version>\\d+\\.\\d+\\.\\d+)$"
+      "versioning": "regex:^bun-v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$"
     }
   ]
 }

@@ -28,7 +28,7 @@ resource "github_actions_organization_permissions" "this" {
       # app.fastship.jp の CI（py-check.yml / py-test.yml）が、mise.toml・mise.lock の版で task・uv などを入れるために使用する
       # （組織の必須ワークフローが効かない個人ユーザーのリポジトリでも CI を動かすため）
       "jdx/mise-action@*",
-      # typescript / bundle-size-measure（style.yml）が使用する。anthropics/claude-code-action も内部で使用する
+      # anthropics/claude-code-action が内部で使用する
       "oven-sh/setup-bun@*",
       # bundle-size-measure（style.yml）が、フロントエンドのバンドルサイズの増減を PR にコメントするために使用する
       "preactjs/compressed-size-action@*",

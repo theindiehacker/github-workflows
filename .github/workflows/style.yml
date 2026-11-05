@@ -160,23 +160,36 @@ jobs:
 
       # 以降の各ツールは !cancelled() で暗黙の success() を外し、前のツールが失敗しても全ツールの結果を 1 run で出す
 
-      - name: "🧹 actionlint"
+      - name: "Setup actionlint"
         if: ${{ !cancelled() && steps.filter.outputs.actionlint == 'true' }}
         timeout-minutes: 5
-        uses: theindiehacker/github-workflows/.github/actions/actionlint@a7539182106264f76d6627b37d8eed62cc60cff2
+        uses: theindiehacker/github-workflows/.github/actions/setup@dbb46dad5aa58ee1f012b982d6299ab277348d29
         with:
+          tool: actionlint
           # renovate: datasource=github-release-attachments depName=rhysd/actionlint
           version: v1.7.12
           sha256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
 
-      - name: "🐚 shellcheck"
+      - name: "🧹 actionlint"
+        if: ${{ !cancelled() && steps.filter.outputs.actionlint == 'true' }}
+        timeout-minutes: 5
+        uses: theindiehacker/github-workflows/.github/actions/actionlint@dbb46dad5aa58ee1f012b982d6299ab277348d29
+
+      - name: "Setup shellcheck"
         if: ${{ !cancelled() && steps.filter.outputs.shellcheck == 'true' }}
         timeout-minutes: 5
-        uses: theindiehacker/github-workflows/.github/actions/shellcheck@a7539182106264f76d6627b37d8eed62cc60cff2
+        uses: theindiehacker/github-workflows/.github/actions/setup@dbb46dad5aa58ee1f012b982d6299ab277348d29
         with:
+          tool: shellcheck
           # renovate: datasource=github-release-attachments depName=koalaman/shellcheck
           version: v0.11.0
           sha256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+
+      - name: "🐚 shellcheck"
+        if: ${{ !cancelled() && steps.filter.outputs.shellcheck == 'true' }}
+        timeout-minutes: 5
+        uses: theindiehacker/github-workflows/.github/actions/shellcheck@dbb46dad5aa58ee1f012b982d6299ab277348d29
+        with:
           files: ${{ steps.filter.outputs.shellcheck_files }}
 
       # 版は対象 repo の宣言を読まず中央で 1 つに固定する（terraform job も同じ値を使う）。
@@ -440,13 +453,13 @@ jobs:
           persist-credentials: false
 
       # bun 本体は対象 repo の指定ではなく中央で固定する（bundle-size-measure も同じ値を使う）
-      - name: "Install bun"
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6  # v2.2.0
+      - name: "Setup bun"
+        uses: theindiehacker/github-workflows/.github/actions/setup@dbb46dad5aa58ee1f012b982d6299ab277348d29
         with: &bun
-          # renovate: datasource=github-releases depName=oven-sh/bun
-          bun-version: 1.4.3
-          # 既定では、PR のコードを実行した後の bun を post step がキャッシュに保存する
-          no-cache: true
+          tool: bun
+          # renovate: datasource=github-release-attachments depName=oven-sh/bun
+          version: bun-v1.4.3
+          sha256: 3e730528d89775f03f87f05c06787c4df4099d0a37f3f252e7b829cb23816e18
 
       # bun install が失敗した場合のみ後続を skip する。biome / knip / tsc は互いに独立して実行するため、
       # 1 回の run で全ての違反が出揃う
@@ -529,9 +542,9 @@ jobs:
           git branch "${GITHUB_BASE_REF}" HEAD^1
           git remote remove origin
 
-      - name: "Install bun"
+      - name: "Setup bun"
         timeout-minutes: 5
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6  # v2.2.0
+        uses: theindiehacker/github-workflows/.github/actions/setup@dbb46dad5aa58ee1f012b982d6299ab277348d29
         with: *bun
 
       # トークンは read のみのため、action による PR へのコメントは失敗する（ログのエラーは想定どおり）。

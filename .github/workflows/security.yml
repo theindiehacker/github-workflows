@@ -102,34 +102,54 @@ jobs:
       # 以降の各ツールは !cancelled() で暗黙の success() を外し、前のツールが失敗しても全ツールの結果を 1 run で出す。
       # 検査の出力は、後のツールが作業ツリーで拾わないよう runner.temp に書く
 
-      - name: "🔑 Gitleaks"
+      - name: "Setup gitleaks"
         if: ${{ !cancelled() }}
-        timeout-minutes: 15
-        uses: theindiehacker/github-workflows/.github/actions/gitleaks@a7539182106264f76d6627b37d8eed62cc60cff2
+        timeout-minutes: 5
+        uses: theindiehacker/github-workflows/.github/actions/setup@dbb46dad5aa58ee1f012b982d6299ab277348d29
         with:
+          tool: gitleaks
           # renovate: datasource=github-release-attachments depName=gitleaks/gitleaks
           version: v8.30.1
           sha256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+
+      - name: "🔑 Gitleaks"
+        if: ${{ !cancelled() }}
+        timeout-minutes: 15
+        uses: theindiehacker/github-workflows/.github/actions/gitleaks@dbb46dad5aa58ee1f012b982d6299ab277348d29
+        with:
           # PR の base..head 差分のみスキャン
           log-opts: ${{ format('{0}..{1}', github.event.pull_request.base.sha, github.event.pull_request.head.sha) }}
 
-      - name: "🛡️ ghalint"
+      - name: "Setup ghalint"
         if: ${{ !cancelled() && steps.filter.outputs.ghalint == 'true' }}
         timeout-minutes: 5
-        uses: theindiehacker/github-workflows/.github/actions/ghalint@a7539182106264f76d6627b37d8eed62cc60cff2
+        uses: theindiehacker/github-workflows/.github/actions/setup@dbb46dad5aa58ee1f012b982d6299ab277348d29
         with:
+          tool: ghalint
           # renovate: datasource=github-release-attachments depName=suzuki-shunsuke/ghalint
           version: v1.5.6
           sha256: 98ee0e3330de7286f470d1e89c03ff7ce70d7a5998ba0f15969c400447be579c
 
-      - name: "🛡️ zizmor"
+      - name: "🛡️ ghalint"
+        if: ${{ !cancelled() && steps.filter.outputs.ghalint == 'true' }}
+        timeout-minutes: 5
+        uses: theindiehacker/github-workflows/.github/actions/ghalint@dbb46dad5aa58ee1f012b982d6299ab277348d29
+
+      - name: "Setup zizmor"
         if: ${{ !cancelled() && (steps.filter.outputs.zizmor_config == 'true' || steps.filter.outputs.zizmor_targets == 'true') }}
-        timeout-minutes: 10
-        uses: theindiehacker/github-workflows/.github/actions/zizmor@a7539182106264f76d6627b37d8eed62cc60cff2
+        timeout-minutes: 5
+        uses: theindiehacker/github-workflows/.github/actions/setup@dbb46dad5aa58ee1f012b982d6299ab277348d29
         with:
+          tool: zizmor
           # renovate: datasource=github-release-attachments depName=zizmorcore/zizmor
           version: v1.31.1
           sha256: d185f726bdaf92df78273217dfdd24ebcd6b0ef48cf3ce776ff5762b6e138c99
+
+      - name: "🛡️ zizmor"
+        if: ${{ !cancelled() && (steps.filter.outputs.zizmor_config == 'true' || steps.filter.outputs.zizmor_targets == 'true') }}
+        timeout-minutes: 10
+        uses: theindiehacker/github-workflows/.github/actions/zizmor@dbb46dad5aa58ee1f012b982d6299ab277348d29
+        with:
           # 設定ファイルは全ファイルの検出結果に影響するため、変更時は repo 全体をスキャン
           scan-all: ${{ steps.filter.outputs.zizmor_config }}
           targets: ${{ steps.filter.outputs.zizmor_targets_files }}
