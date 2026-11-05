@@ -146,7 +146,7 @@ jobs:
       - name: "Python の検査対象を割り当てる"
         id: python
         if: ${{ !cancelled() && steps.filter.outputs.python == 'true' }}
-        uses: theindiehacker/github-workflows/.github/actions/python-targets@a7539182106264f76d6627b37d8eed62cc60cff2
+        uses: theindiehacker/github-workflows/.github/actions/python-targets@090808b58a7d720e0ff85d4406b4af0293ddefee
 
       - name: "TypeScript の検査対象を収集"
         id: typescript
@@ -237,7 +237,7 @@ jobs:
       - name: "📜 Python の規約を検査"
         if: ${{ !cancelled() && steps.python.outcome == 'success' }}
         timeout-minutes: 5
-        uses: theindiehacker/github-workflows/.github/actions/python-rule@a7539182106264f76d6627b37d8eed62cc60cff2
+        uses: theindiehacker/github-workflows/.github/actions/python-rule@090808b58a7d720e0ff85d4406b4af0293ddefee
         with:
           pyprojects: ${{ steps.python.outputs.pyprojects }}
           importlinters: ${{ steps.python.outputs.importlinters }}
@@ -400,7 +400,7 @@ jobs:
 
       - name: "🧱 Pyright - 型チェック"
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
-        uses: theindiehacker/github-workflows/.github/actions/pyright@a7539182106264f76d6627b37d8eed62cc60cff2
+        uses: theindiehacker/github-workflows/.github/actions/pyright@090808b58a7d720e0ff85d4406b4af0293ddefee
         with:
           version: ${{ env.PYRIGHT_VERSION }}
           project: ${{ matrix.project }}
