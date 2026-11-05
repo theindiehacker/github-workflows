@@ -151,9 +151,12 @@ jobs:
           typescript: ${{ steps.filter.outputs.typescript }}
           terraform: ${{ steps.filter.outputs.terraform }}
 
-      # 以降の各ツールは !cancelled() で暗黙の success() を外し、前のツールが失敗しても全ツールの結果を 1 run で出す
+      # 以降の各ツールは !cancelled() で暗黙の success() を外し、前のツールが失敗しても全ツールの結果を 1 run で出す。
+      # 検査の step は、対応する Setup の step が成功したかだけを見る（条件を 1 か所にし、導入に失敗したまま
+      # runner に元からある別の版で検査したり、command not found で本当の原因が埋もれたりしないようにする）
 
       - name: "Setup actionlint"
+        id: setup-actionlint
         if: ${{ !cancelled() && steps.filter.outputs.actionlint == 'true' }}
         timeout-minutes: 5
         uses: theindiehacker/github-workflows/.github/actions/setup@dbb46dad5aa58ee1f012b982d6299ab277348d29
@@ -164,7 +167,7 @@ jobs:
           sha256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
 
       - name: "🧹 actionlint"
-        if: ${{ !cancelled() && steps.filter.outputs.actionlint == 'true' }}
+        if: ${{ !cancelled() && steps.setup-actionlint.outcome == 'success' }}
         timeout-minutes: 5
         shell: bash
         # workflow command 形式で出力し、検出箇所を PR に annotation 表示する
@@ -173,6 +176,7 @@ jobs:
           actionlint -format $'{{range $err := .}}::error file={{$err.Filepath}},line={{$err.Line}},col={{$err.Column}}::{{$err.Message}}\n{{end}}'
 
       - name: "Setup shellcheck"
+        id: setup-shellcheck
         if: ${{ !cancelled() && steps.filter.outputs.shellcheck == 'true' }}
         timeout-minutes: 5
         uses: theindiehacker/github-workflows/.github/actions/setup@dbb46dad5aa58ee1f012b982d6299ab277348d29
@@ -183,7 +187,7 @@ jobs:
           sha256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
 
       - name: "🐚 shellcheck"
-        if: ${{ !cancelled() && steps.filter.outputs.shellcheck == 'true' }}
+        if: ${{ !cancelled() && steps.setup-shellcheck.outcome == 'success' }}
         timeout-minutes: 5
         uses: theindiehacker/github-workflows/.github/actions/shellcheck@dbb46dad5aa58ee1f012b982d6299ab277348d29
         with:
@@ -192,6 +196,7 @@ jobs:
       # 版は対象 repo の宣言を読まず中央で 1 つに固定する（terraform job も同じ値を使う）。
       # action は HashiCorp の SHA256SUMS の署名を検証してから導入する
       - name: "Setup terraform"
+        id: setup-terraform
         if: ${{ !cancelled() && steps.filter.outputs.terraform_fmt == 'true' }}
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4.0.1
         with: &setup-terraform
@@ -199,7 +204,7 @@ jobs:
           terraform_wrapper: false
 
       - name: "🏗️ terraform fmt"
-        if: ${{ !cancelled() && steps.filter.outputs.terraform_fmt == 'true' }}
+        if: ${{ !cancelled() && steps.setup-terraform.outcome == 'success' }}
         timeout-minutes: 5
         uses: theindiehacker/github-workflows/.github/actions/terraform@b3354ce6e3a927e159bfca703a1d9530eec4af45
         with:
@@ -208,6 +213,7 @@ jobs:
 
       # checksums は release の zip の SHA-256。action がダウンロード後に検証する
       - name: "Setup tflint"
+        id: setup-tflint
         if: ${{ !cancelled() && steps.filter.outputs.tflint == 'true' }}
         uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337  # v6.3.2
         with:
@@ -216,7 +222,7 @@ jobs:
           checksums: cca9d13e2e1d7a2c627af60ff899a3c9b74212899416aeb96ec764d2ef954537
 
       - name: "🏗️ tflint"
-        if: ${{ !cancelled() && steps.filter.outputs.tflint == 'true' }}
+        if: ${{ !cancelled() && steps.setup-tflint.outcome == 'success' }}
         timeout-minutes: 10
         uses: theindiehacker/github-workflows/.github/actions/tflint@a7539182106264f76d6627b37d8eed62cc60cff2
         with:

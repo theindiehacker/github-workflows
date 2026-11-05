@@ -87,3 +87,20 @@ def test_find_dockerfiles(tmp_path, monkeypatch):
         "a b/app.Dockerfile",
         "b/Dockerfile.prod",
     ]
+
+
+def test_find_dockerfiles_non_utf8_path(tmp_path, monkeypatch):
+    # UTF-8 でないパスは U+FFFD に置き換える（GITHUB_OUTPUT に書けずに traceback で止まらない）
+    os.makedirs(os.path.join(os.fsencode(tmp_path), b"a\xff"))
+    (tmp_path / os.fsdecode(b"a\xff") / "Dockerfile").write_text("FROM a\n")
+    monkeypatch.chdir(tmp_path)
+    assert trivy_images.find_dockerfiles() == ["a\ufffd/Dockerfile"]
+
+
+def test_final_stages_log_does_not_start_with_path(monkeypatch, capsys):
+    # 解析できないときのログの行頭は固定の文言にする（:: で始まるパスがワークフローコマンドにならない）
+    monkeypatch.setenv("PATH", "")
+    assert trivy_images.final_stages("::stop-commands::x/Dockerfile") == [
+        {"dockerfile": "::stop-commands::x/Dockerfile"}
+    ]
+    assert capsys.readouterr().err.splitlines()[-1].startswith("解析できない Dockerfile: ::stop-commands::x/Dockerfile")

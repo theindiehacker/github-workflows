@@ -6,7 +6,6 @@
 
 import json
 import os
-import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
@@ -34,13 +33,16 @@ def has_part(path: str, name: str) -> bool:
 
 
 def has_dependency(directory: str, name: str) -> bool:
-    """package.json の依存に name があるか。読めない package.json は依存なしとして飛ばす（判定の失敗でマージを止めない）"""
+    """package.json の依存に name があるか。読めない package.json は依存なしとして飛ばす（判定の失敗でマージを止めない）。
+    jq の .dependencies.next // .devDependencies.next と同じく、dependencies を先に見て、null と false だけを「無い」とみなす
+    """
     try:
         package = json.loads(Path(directory, "package.json").read_text(encoding="utf-8"))
-        dependencies = {**(package.get("dependencies") or {}), **(package.get("devDependencies") or {})}
-    except (OSError, ValueError, AttributeError, TypeError):
+        values = [(package.get(key) or {}).get(name) for key in ("dependencies", "devDependencies")]
+    # 深い入れ子の RecursionError なども含め、どんな壊れ方でも飛ばす
+    except Exception:  # noqa: BLE001
         return False
-    return dependencies.get(name) not in (None, False)
+    return any(value is not None and value is not False for value in values)
 
 
 def relative(path: str, base: str) -> str:
@@ -152,7 +154,8 @@ def main() -> int:
         # 出力は種類ごとにまとめて書き、失敗した種類の出力を半端に残さない
         try:
             outputs = collector()
-        except (OSError, ValueError, subprocess.CalledProcessError) as e:
+        # 想定外の例外でも、ほかの種類の出力は書く（失敗は ::error で知らせる）
+        except Exception as e:  # noqa: BLE001
             gha.error(f"{collector.__name__}: {e}")
             status = 1
             continue

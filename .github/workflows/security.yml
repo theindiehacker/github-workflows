@@ -100,9 +100,11 @@ jobs:
           persist-credentials: false
 
       # 以降の各ツールは !cancelled() で暗黙の success() を外し、前のツールが失敗しても全ツールの結果を 1 run で出す。
+      # 検査の step は、対応する Setup の step が成功したかだけを見る（条件を 1 か所にし、導入の失敗を見逃さない）。
       # 検査の出力は、後のツールが作業ツリーで拾わないよう runner.temp に書く
 
       - name: "Setup gitleaks"
+        id: setup-gitleaks
         if: ${{ !cancelled() }}
         timeout-minutes: 5
         uses: theindiehacker/github-workflows/.github/actions/setup@dbb46dad5aa58ee1f012b982d6299ab277348d29
@@ -113,7 +115,7 @@ jobs:
           sha256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
 
       - name: "🔑 Gitleaks"
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.setup-gitleaks.outcome == 'success' }}
         timeout-minutes: 15
         uses: theindiehacker/github-workflows/.github/actions/gitleaks@dbb46dad5aa58ee1f012b982d6299ab277348d29
         with:
@@ -121,6 +123,7 @@ jobs:
           log-opts: ${{ format('{0}..{1}', github.event.pull_request.base.sha, github.event.pull_request.head.sha) }}
 
       - name: "Setup ghalint"
+        id: setup-ghalint
         if: ${{ !cancelled() && steps.filter.outputs.ghalint == 'true' }}
         timeout-minutes: 5
         uses: theindiehacker/github-workflows/.github/actions/setup@dbb46dad5aa58ee1f012b982d6299ab277348d29
@@ -131,13 +134,14 @@ jobs:
           sha256: 98ee0e3330de7286f470d1e89c03ff7ce70d7a5998ba0f15969c400447be579c
 
       - name: "🛡️ ghalint"
-        if: ${{ !cancelled() && steps.filter.outputs.ghalint == 'true' }}
+        if: ${{ !cancelled() && steps.setup-ghalint.outcome == 'success' }}
         timeout-minutes: 5
         shell: bash
         # ghalint run は個別ファイル指定ができないため、.github/workflows/ 全体が対象になる
         run: ghalint run
 
       - name: "Setup zizmor"
+        id: setup-zizmor
         if: ${{ !cancelled() && (steps.filter.outputs.zizmor_config == 'true' || steps.filter.outputs.zizmor_targets == 'true') }}
         timeout-minutes: 5
         uses: theindiehacker/github-workflows/.github/actions/setup@dbb46dad5aa58ee1f012b982d6299ab277348d29
@@ -148,7 +152,7 @@ jobs:
           sha256: d185f726bdaf92df78273217dfdd24ebcd6b0ef48cf3ce776ff5762b6e138c99
 
       - name: "🛡️ zizmor"
-        if: ${{ !cancelled() && (steps.filter.outputs.zizmor_config == 'true' || steps.filter.outputs.zizmor_targets == 'true') }}
+        if: ${{ !cancelled() && steps.setup-zizmor.outcome == 'success' }}
         timeout-minutes: 10
         uses: theindiehacker/github-workflows/.github/actions/zizmor@dbb46dad5aa58ee1f012b982d6299ab277348d29
         with:

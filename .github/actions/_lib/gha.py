@@ -6,12 +6,11 @@
   -u: print の出力を貯めず、子プロセスの出力と順番が入れ替わらないようにする
 """
 
-import contextlib
 import json
 import os
 import subprocess
 import sys
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from typing import Any
 
 # シェルと同じく、コマンドが見つからないときの終了コード
@@ -74,6 +73,9 @@ def to_json(value: object) -> str:
 def set_output(name: str, value: object) -> None:
     """出力 name に書く。文字列以外は 1 行の JSON にする"""
     text = value if isinstance(value, str) else to_json(value)
+    # 改行があると GITHUB_OUTPUT の行が分かれ、ほかの出力を差し込まれる（JSON は改行を \n にするので当たらない）
+    if "\r" in text or "\n" in text:
+        raise ValueError(f"出力 {name} の値に改行を含められません")
     with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
         f.write(f"{name}={text}\n")
 
@@ -102,13 +104,3 @@ def error(message: str, file: str | None = None) -> None:
 
 def warning(message: str, file: str | None = None) -> None:
     command("warning", message, file)
-
-
-@contextlib.contextmanager
-def group(title: str) -> Iterator[None]:
-    """ログを折りたたむ。title はエスケープして出す"""
-    print(f"::group::{escape(title)}")
-    try:
-        yield
-    finally:
-        print("::endgroup::")

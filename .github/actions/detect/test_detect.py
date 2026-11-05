@@ -122,6 +122,11 @@ def test_typescript_root_package(repo):
     [
         ('{"dependencies":{"next":""}}', True),  # jq と同じく、空文字は依存ありとして扱う
         ('{"dependencies":{"next":false}}', False),
+        ('{"dependencies":{"next":0}}', True),  # jq と同じく、0 も依存ありとして扱う（false と取り違えない）
+        # dependencies を先に見る（jq の .dependencies.next // .devDependencies.next と同じ）
+        ('{"dependencies":{"next":"15"},"devDependencies":{"next":false}}', True),
+        ('{"devDependencies":{"next":"15"}}', True),
+        ("[" * 100000 + "]" * 100000, False),  # 深い入れ子（RecursionError）も読めないものとして飛ばす
         ('{"dependencies":["next"]}', False),
         ("[]", False),
         ("not json", False),
@@ -274,3 +279,18 @@ def test_main_logs_outputs(repo, outputs, enable, capsys):
     assert 'terraform_dirs=["日本語"]\n' in log
     assert "bundle_size_frontends=false\n" in log
     assert outputs()["terraform_dirs"] == '["日本語"]'
+
+
+def test_main_continues_after_unexpected_error(repo, outputs, enable, monkeypatch, capsys):
+    """想定外の例外（RecursionError など）でも、ほかの種類の出力は書く"""
+    repo({"main.tf": "", "uv.lock": ""})
+    enable("PYTHON", "TERRAFORM")
+
+    def broken() -> dict[str, object]:
+        raise RecursionError("maximum recursion depth exceeded")
+
+    broken.__name__ = "python"
+    monkeypatch.setattr(detect, "python", broken)
+    assert detect.main() == 1
+    assert parsed(outputs)["terraform_dirs"] == ["."]
+    assert "::error::python: maximum recursion depth exceeded" in capsys.readouterr().out

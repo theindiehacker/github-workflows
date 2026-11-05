@@ -19,6 +19,7 @@ case "${COMMAND}" in
     ;;
   init)
     jq -r '.[]' <<< "${PATHS}" > "${list}"
+    if [ -z "${TF_PLUGIN_CACHE_DIR:-}" ]; then echo "::error::init では TF_PLUGIN_CACHE_DIR を env で渡してください"; exit 1; fi
     mkdir -p "${TF_PLUGIN_CACHE_DIR}"
     initialized="${RUNNER_TEMP}/terraform-initialized.txt"
     : > "${initialized}"

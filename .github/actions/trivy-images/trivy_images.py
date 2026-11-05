@@ -109,8 +109,8 @@ def final_stages(dockerfile: str) -> list[dict]:
     proc = gha.run([*args, "--file", dockerfile, context], check=False, stdout=subprocess.PIPE)
     if proc.returncode != 0:
         # 解析できない Dockerfile は target を付けずに入れ、ビルドのエラーをその image の scan-image に出す
-        # パスは対象 repo 由来のため、改行で次の行をワークフローコマンドにされないようエスケープする
-        print(f"{gha.escape(dockerfile)}: ステージを解析できないため、target を付けずにビルドする", file=sys.stderr)
+        # パスは対象 repo 由来のため、行頭には固定の文言を置き（:: で始まるパス対策）、改行もエスケープする
+        print(f"解析できない Dockerfile: {gha.escape(dockerfile)}（target を付けずにビルドする）", file=sys.stderr)
         return [{"dockerfile": dockerfile}]
     text = Path(dockerfile).read_text(encoding="utf-8", errors="replace")
     return select_final_stages(dockerfile, json.loads(proc.stdout).get("targets") or [], from_refs(text))
@@ -131,7 +131,8 @@ def find_dockerfiles() -> list[str]:
         for name in filter(is_dockerfile, files):
             path = os.path.join(root, name)
             if stat.S_ISREG(os.lstat(path).st_mode):
-                found.append(path.removeprefix("./"))
+                # UTF-8 でないパスは U+FFFD に置き換える（旧 .sh の jq と同じ。存在しないパスとして ::error:: で止まる）
+                found.append(os.fsencode(path).decode("utf-8", "replace").removeprefix("./"))
     return sorted(found)
 
 

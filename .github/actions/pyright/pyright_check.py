@@ -31,7 +31,8 @@ def has_tool(name: str) -> bool | None:
 
         with open("pyproject.toml", "rb") as f:
             return name in tomllib.load(f).get("tool", {})
-    except (ImportError, OSError, ValueError, TypeError):
+    # 旧 .sh と同じく、どんな失敗でも「読めない」として Pyright は動かす（RecursionError なども）
+    except Exception:  # noqa: BLE001
         return None
 
 

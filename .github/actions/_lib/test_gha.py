@@ -50,3 +50,12 @@ def test_git_z_non_utf8_path(repo):
     (root / os.fsdecode(b"a\xff") / "uv.lock").write_text("")
     gha.run(["git", "add", "-A"])
     assert gha.git_z("ls-files") == ["a�/uv.lock"]
+
+
+def test_set_output_rejects_line_break(tmp_path, monkeypatch):
+    # 改行で GITHUB_OUTPUT の行を分け、ほかの出力を差し込めないようにする
+    monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
+    with pytest.raises(ValueError):
+        gha.set_output("x", "true\nimages=[]")
+    gha.set_output("x", ["a\nb"])  # JSON は改行を \\n にするので書ける
+    assert (tmp_path / "output").read_text() == 'x=["a\\nb"]\n'

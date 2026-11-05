@@ -119,3 +119,16 @@ def test_has_tool_without_tomllib(project, monkeypatch):
     (project / "pyproject.toml").write_text("[tool.pyright]\n")
     monkeypatch.setitem(sys.modules, "tomllib", None)
     assert pyright_check.has_tool("pyright") is None
+
+
+def test_has_tool_unexpected_error(project, monkeypatch):
+    # 旧 .sh と同じく、どんな失敗でも「読めない」として扱う（深い入れ子の RecursionError など）
+    (project / "pyproject.toml").write_text("[tool.pyright]\n")
+
+    class BrokenToml:
+        @staticmethod
+        def load(_):
+            raise RecursionError("maximum recursion depth exceeded")
+
+    monkeypatch.setitem(sys.modules, "tomllib", BrokenToml)
+    assert pyright_check.has_tool("pyright") is None
