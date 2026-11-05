@@ -145,7 +145,7 @@ jobs:
       - name: "検査対象を検出"
         id: detect
         if: ${{ !cancelled() }}
-        uses: theindiehacker/github-workflows/.github/actions/detect@92693de5701bcbbd8a83e4de1b94d9c0e5de31ae
+        uses: theindiehacker/github-workflows/.github/actions/detect@c12ed731af542d01b685a9efc3f0ac850226ca04
         with:
           python: ${{ steps.filter.outputs.python }}
           typescript: ${{ steps.filter.outputs.typescript }}
@@ -206,7 +206,7 @@ jobs:
       - name: "🏗️ terraform fmt"
         if: ${{ !cancelled() && steps.setup-terraform.outcome == 'success' }}
         timeout-minutes: 5
-        uses: theindiehacker/github-workflows/.github/actions/terraform@b3354ce6e3a927e159bfca703a1d9530eec4af45
+        uses: theindiehacker/github-workflows/.github/actions/terraform@c12ed731af542d01b685a9efc3f0ac850226ca04
         with:
           command: fmt
           paths: ${{ steps.filter.outputs.terraform_fmt_files }}
@@ -254,7 +254,7 @@ jobs:
       - name: "📜 Python の規約を検査"
         if: ${{ !cancelled() && steps.detect.outputs.python_pyprojects != '' }}
         timeout-minutes: 5
-        uses: theindiehacker/github-workflows/.github/actions/python-rule@a17683a83dd64e209688cd051db5feefe606ae93
+        uses: theindiehacker/github-workflows/.github/actions/python-rule@c12ed731af542d01b685a9efc3f0ac850226ca04
         with:
           pyprojects: ${{ steps.detect.outputs.python_pyprojects }}
           importlinters: ${{ steps.detect.outputs.python_importlinters }}
@@ -329,7 +329,7 @@ jobs:
 
       - name: "terraform init"
         id: init
-        uses: theindiehacker/github-workflows/.github/actions/terraform@b3354ce6e3a927e159bfca703a1d9530eec4af45
+        uses: theindiehacker/github-workflows/.github/actions/terraform@c12ed731af542d01b685a9efc3f0ac850226ca04
         env:
           TF_PLUGIN_CACHE_DIR: ${{ runner.temp }}/terraform-plugin-cache
           # terraform はこのホストへのリクエストにだけトークンを付ける。取得できなかったときは空になり、registry を使わない repo には影響しない
@@ -351,7 +351,7 @@ jobs:
       - name: "terraform test"
         # init / validate が失敗しても、init できたディレクトリのテストは実行する
         if: ${{ !cancelled() && steps.init.outcome != 'skipped' }}
-        uses: theindiehacker/github-workflows/.github/actions/terraform@b3354ce6e3a927e159bfca703a1d9530eec4af45
+        uses: theindiehacker/github-workflows/.github/actions/terraform@c12ed731af542d01b685a9efc3f0ac850226ca04
         env:
           TF_PLUGIN_CACHE_DIR: ${{ runner.temp }}/terraform-plugin-cache
         with:
@@ -411,7 +411,7 @@ jobs:
 
       - name: "🧱 Pyright - 型チェック"
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
-        uses: theindiehacker/github-workflows/.github/actions/pyright@a17683a83dd64e209688cd051db5feefe606ae93
+        uses: theindiehacker/github-workflows/.github/actions/pyright@c12ed731af542d01b685a9efc3f0ac850226ca04
         with:
           version: ${{ env.PYRIGHT_VERSION }}
           project: ${{ matrix.project }}
