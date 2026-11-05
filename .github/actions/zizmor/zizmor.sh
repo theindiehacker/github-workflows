@@ -20,15 +20,6 @@ if git grep -InE 'zizmor:[[:space:]]*ignore' -- "${pathspecs[@]}"; then
   exit 1
 fi
 
-archive="${RUNNER_TEMP}/zizmor-x86_64-unknown-linux-gnu.tar.gz"
-curl -sSfL -o "${archive}" "https://github.com/zizmorcore/zizmor/releases/download/${VERSION}/${archive##*/}"
-
-# SHA-256 検証（改ざん・破損を検知）
-echo "${SHA256}  ${archive}" | sha256sum -c -
-
-sudo tar -xz -C /usr/local/bin -f "${archive}" zizmor
-zizmor --version
-
 config_args=(--no-config)
 if [ -f .github/zizmor.yml ]; then
   config_args=(--config .github/zizmor.yml)
