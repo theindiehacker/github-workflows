@@ -10,19 +10,41 @@ import contextlib
 import json
 import os
 import subprocess
+import sys
 from collections.abc import Iterator, Sequence
 from typing import Any
 
+# シェルと同じく、コマンドが見つからないときの終了コード
+COMMAND_NOT_FOUND = 127
+
+
+def not_found(args: Sequence[str]) -> None:
+    print(f"{args[0]}: command not found", file=sys.stderr)
+
 
 def run(args: Sequence[str], *, check: bool = True, **kwargs: Any) -> subprocess.CompletedProcess[str]:
-    """コマンドを実行する。引数はリストで渡し、シェルは通さない（出力は UTF-8 の文字列で受ける）"""
-    return subprocess.run(args, check=check, text=True, encoding="utf-8", **kwargs)
+    """コマンドを実行する。引数はリストで渡し、シェルは通さない。
+    出力は UTF-8 の文字列で受け、読めないバイトは U+FFFD に置き換える（jq -R と同じ。UTF-8 でないパスがあっても止まらない）。
+    コマンドが無ければ、シェルと同じく終了コード 127 にする（check=False の呼び出し側が失敗の経路に入れるように）
+    """
+    try:
+        return subprocess.run(args, check=check, text=True, encoding="utf-8", errors="replace", **kwargs)
+    except FileNotFoundError:
+        not_found(args)
+        if check:
+            raise subprocess.CalledProcessError(COMMAND_NOT_FOUND, args) from None
+        return subprocess.CompletedProcess(args, COMMAND_NOT_FOUND, stdout="", stderr="")
 
 
 def tee(args: Sequence[str]) -> tuple[int, str]:
     """コマンドを実行し、標準出力と標準エラーをログに流しながら受け取る（シェルの 2>&1 | tee と同じ）"""
+    try:
+        proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    except FileNotFoundError:
+        not_found(args)
+        return COMMAND_NOT_FOUND, ""
     # バイト列で受けて 1 行ずつデコードする（UTF-8 でない出力があっても止まらないよう、読めない文字は置き換える）
-    with subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT) as proc:
+    with proc:
         assert proc.stdout is not None
         lines = []
         for raw in proc.stdout:

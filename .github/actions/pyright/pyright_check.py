@@ -13,7 +13,6 @@ import os
 import re
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_lib"))
@@ -28,9 +27,12 @@ def has_tool(name: str) -> bool | None:
     if not Path("pyproject.toml").exists():
         return False
     try:
+        # tomllib は Python 3.11 から。import できないランナーでも、旧 .sh と同じく「読めない」として Pyright は動かす
+        import tomllib
+
         with open("pyproject.toml", "rb") as f:
             return name in tomllib.load(f).get("tool", {})
-    except (OSError, ValueError, TypeError):
+    except (ImportError, OSError, ValueError, TypeError):
         return None
 
 

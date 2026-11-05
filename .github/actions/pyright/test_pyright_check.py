@@ -1,4 +1,5 @@
 import json
+import sys
 
 import pyright_check
 import pytest
@@ -111,3 +112,10 @@ def test_check_type_errors_with_nested(capsys):
 def test_check_runtime_error(capsys):
     assert check(1, "Error: pyright could not start") == 2
     assert "型チェックを実行できませんでした（exit 2）" in annotations(capsys)[0]
+
+
+def test_has_tool_without_tomllib(project, monkeypatch):
+    # tomllib の無い Python（3.10 以前）でも落とさず、「読めない」として扱う
+    (project / "pyproject.toml").write_text("[tool.pyright]\n")
+    monkeypatch.setitem(sys.modules, "tomllib", None)
+    assert pyright_check.has_tool("pyright") is None

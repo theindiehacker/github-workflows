@@ -1,6 +1,9 @@
+import os
+import subprocess
 import sys
 
 import gha
+import pytest
 
 
 def test_escape():
@@ -19,3 +22,25 @@ def test_tee(capsys):
 def test_tee_signal():
     status, _ = gha.tee([sys.executable, "-c", "import os, signal; os.kill(os.getpid(), signal.SIGTERM)"])
     assert status == 128 + 15
+
+
+def test_run_command_not_found(capsys):
+    # コマンドが無ければ、シェルと同じく 127 にする（check=False の呼び出し側が失敗の経路に入れる）
+    assert gha.run(["no-such-command-xyz"], check=False).returncode == 127
+    with pytest.raises(subprocess.CalledProcessError) as exc_info:
+        gha.run(["no-such-command-xyz"])
+    assert exc_info.value.returncode == 127
+    assert "no-such-command-xyz: command not found" in capsys.readouterr().err
+
+
+def test_tee_command_not_found():
+    assert gha.tee(["no-such-command-xyz"]) == (127, "")
+
+
+def test_git_z_non_utf8_path(repo):
+    # UTF-8 でないパスは U+FFFD に置き換えて読む（jq -R と同じ。traceback で止めない）
+    root = repo({})
+    os.makedirs(os.path.join(os.fsencode(root), b"a\xff"))
+    (root / os.fsdecode(b"a\xff") / "uv.lock").write_text("")
+    gha.run(["git", "add", "-A"])
+    assert gha.git_z("ls-files") == ["a�/uv.lock"]
