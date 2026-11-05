@@ -17,4 +17,4 @@ runs:
       env:
         PYPROJECTS: ${{ inputs.pyprojects }}
         IMPORTLINTERS: ${{ inputs.importlinters }}
-      run: bash "${GITHUB_ACTION_PATH}/python-rule.sh"
+      run: python3 -I -u "${GITHUB_ACTION_PATH}/python_rule.py"

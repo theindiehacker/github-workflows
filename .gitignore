@@ -16,3 +16,7 @@ __pycache__/
 .terraform/
 *.tfstate
 *.tfstate.*
+
+# ruff / pytest のキャッシュ
+.ruff_cache/
+.pytest_cache/
