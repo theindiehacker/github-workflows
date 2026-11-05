@@ -183,7 +183,7 @@ jobs:
           scanners: &trivy-scanners vuln,misconfig
           severity: ${{ steps.policy.outputs.severity }}
           ignore-unfixed: &trivy-ignore-unfixed true  # 修正版が無い脆弱性は除外する
-          exit-code: &trivy-exit-code "${{ github.event.pull_request.user.login == format('renovate-{0}[bot]', github.repository_owner) && '0' || '1' }}"
+          exit-code: &trivy-exit-code "${{ github.event.pull_request.user.login == format('renovate-{0}[bot]', github.repository_owner) && github.actor == format('renovate-{0}[bot]', github.repository_owner) && '0' || '1' }}"
           trivyignores: ${{ steps.policy.outputs.trivyignores }}
           # GHAS が無く SARIF を使えないため JSON で出力し、次の step で表にして表示する
           format: json
