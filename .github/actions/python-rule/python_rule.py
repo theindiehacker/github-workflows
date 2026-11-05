@@ -9,7 +9,6 @@ from pathlib import Path, PurePosixPath
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_lib"))
 import gha
-from gha import escape
 
 # 対象を増やすときは style.yml の paths-filter の python にも追加する（フィルタから漏れると起動しない）
 LEGACY_PATHSPECS = [
@@ -67,7 +66,7 @@ def main() -> None:
     for file in gha.git_z("ls-files", "--", *LEGACY_PATHSPECS):
         if is_legacy(file, has_manifests=has_manifests, has_sources=has_sources):
             gha.error(
-                f"{escape(file)} ではなく pyproject.toml と uv.lock で依存を管理してください"
+                f"{file} ではなく pyproject.toml と uv.lock で依存を管理してください"
                 "（https://docs.astral.sh/uv/guides/migration/pip-to-project/）",
                 file=file,
             )

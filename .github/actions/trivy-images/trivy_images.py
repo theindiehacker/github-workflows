@@ -17,7 +17,6 @@ from pathlib import Path, PurePosixPath
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_lib"))
 import gha
-from gha import escape
 
 MANIFESTS = [".github/trivy-image.yml", ".github/trivy-image.yaml"]
 DIRECTIVE = re.compile(r"#\s*([A-Za-z]+)\s*=\s*(\S*)", re.ASCII)
@@ -110,7 +109,8 @@ def final_stages(dockerfile: str) -> list[dict]:
     proc = gha.run([*args, "--file", dockerfile, context], check=False, stdout=subprocess.PIPE)
     if proc.returncode != 0:
         # 解析できない Dockerfile は target を付けずに入れ、ビルドのエラーをその image の scan-image に出す
-        print(f"{dockerfile}: ステージを解析できないため、target を付けずにビルドする", file=sys.stderr)
+        # パスは対象 repo 由来のため、改行で次の行をワークフローコマンドにされないようエスケープする
+        print(f"{gha.escape(dockerfile)}: ステージを解析できないため、target を付けずにビルドする", file=sys.stderr)
         return [{"dockerfile": dockerfile}]
     text = Path(dockerfile).read_text(encoding="utf-8", errors="replace")
     return select_final_stages(dockerfile, json.loads(proc.stdout).get("targets") or [], from_refs(text))
@@ -176,9 +176,7 @@ def main() -> None:
     # 3. マニフェストの記載ミスは、ビルドを待たずにここで落とす
     for image in images:
         if not image["dockerfile"] or not Path(image["dockerfile"]).is_file():
-            gha.error(
-                f"{manifest} の images[].dockerfile が未指定か、ファイルが存在しません: '{escape(image['dockerfile'])}'"
-            )
+            gha.error(f"{manifest} の images[].dockerfile が未指定か、ファイルが存在しません: '{image['dockerfile']}'")
             sys.exit(1)
 
     gha.set_output("images", images)

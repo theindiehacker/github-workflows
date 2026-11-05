@@ -17,7 +17,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "_lib"))
 import gha
-from gha import escape
 
 DOCS = "（https://microsoft.github.io/pyright/#/configuration）"
 
@@ -117,14 +116,14 @@ def check(status: int, log: str, *, config: str, generated: bool, nested: list[s
         keep = ""
         if generated and nested:
             # 書き出した設定にしか入れ子のプロジェクトの除外が無いため、利用者が設定を書くときに残すよう伝える
-            keep = f"（設定を書くときは、入れ子のプロジェクト {escape(', '.join(nested))} も exclude に入れてください）"
+            keep = f"（設定を書くときは、入れ子のプロジェクト {', '.join(nested)} も exclude に入れてください）"
         gha.error(
             f"Pyright: 型エラーを直してください。検査から外すディレクトリ（scripts/ など）は {config} の include / exclude で絞れます{keep}{DOCS}"
         )
         # 入れ子のプロジェクトのファイルに指摘があれば、このプロジェクトの環境で検査されている（除外できていない）
         if found := unchecked(nested, log, cwd):
             gha.error(
-                f"Pyright: 入れ子のプロジェクト（{escape(', '.join(found))}）が、このプロジェクトの環境で検査されています。"
+                f"Pyright: 入れ子のプロジェクト（{', '.join(found)}）が、このプロジェクトの環境で検査されています。"
                 f"{config} の exclude に入れてください（それぞれ自分の環境で検査されます）"
             )
     elif status != 0:

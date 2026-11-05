@@ -11,6 +11,12 @@ def test_escape():
     assert gha.escape_property("a:b,c%") == "a%3Ab%2Cc%25"
 
 
+def test_command_escapes_message_and_file(capsys):
+    # 対象 repo 由来の値をそのまま渡しても、改行で次の行をワークフローコマンドにされない
+    gha.error("bad path: a%b\n::warning::injected", file="x,y:z\n")
+    assert capsys.readouterr().out == "::error file=x%2Cy%3Az%0A::bad path: a%25b%0A::warning::injected\n"
+
+
 def test_tee(capsys):
     # 標準エラーもログに入り、UTF-8 でない出力は置き換えて読む。終了コードはそのまま返す
     code = "import sys; print('out', flush=True); sys.stderr.buffer.write(b'err \\xff\\n'); sys.exit(3)"

@@ -89,9 +89,11 @@ def escape_property(value: str) -> str:
 
 
 def command(name: str, message: str, file: str | None = None) -> None:
-    """::error / ::warning / ::notice を出す。message は呼び出し側でエスケープしておく"""
+    """::error / ::warning / ::notice を出す。message も file もここでエスケープするので、
+    対象 repo 由来の値をそのまま埋め込んでよい（呼び出し側で escape() を書き忘れて、コマンドを偽装されることが無い）
+    """
     prop = f" file={escape_property(file)}" if file else ""
-    print(f"::{name}{prop}::{message}")
+    print(f"::{name}{prop}::{escape(message)}")
 
 
 def error(message: str, file: str | None = None) -> None:
