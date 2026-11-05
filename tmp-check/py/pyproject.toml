@@ -1,0 +1,14 @@
+[project]
+name = "check-py"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.importlinter]
+root_package = "app"
+
+[[tool.importlinter.contracts]]
+name = "a は b に依存しない"
+type = "forbidden"
+source_modules = ["app.a"]
+forbidden_modules = ["app.b"]
