@@ -3,10 +3,10 @@ description: "uv（pyproject.toml と uv.lock）で依存を管理している�
 
 inputs:
   pyprojects:
-    description: "targets の出力 python_pyprojects"
+    description: "detect の出力 python_pyprojects"
     required: true
   importlinters:
-    description: "targets の出力 python_importlinters"
+    description: "detect の出力 python_importlinters"
     required: true
 
 runs:

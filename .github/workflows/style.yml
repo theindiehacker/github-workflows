@@ -47,15 +47,15 @@ jobs:
       contents: read
       pull-requests: read  # paths-filter の変更ファイル一覧取得に必要
     outputs:
-      python_projects: ${{ steps.targets.outputs.python_projects || '[]' }}
-      python_nested: ${{ steps.targets.outputs.python_nested || '{}' }}
-      python_importlinters: ${{ steps.targets.outputs.python_importlinters || '[]' }}
-      typescript_roots: ${{ steps.targets.outputs.typescript_roots || '[]' }}
-      typescript_tsconfigs: ${{ steps.targets.outputs.typescript_tsconfigs || '[]' }}
-      typescript_nextjs: ${{ steps.targets.outputs.typescript_nextjs || '[]' }}
-      bundle_size_frontends: ${{ steps.targets.outputs.bundle_size_frontends }}
-      bundle_size_targets: ${{ steps.targets.outputs.bundle_size_targets || '[]' }}
-      terraform_dirs: ${{ steps.targets.outputs.terraform_dirs || '[]' }}
+      python_projects: ${{ steps.detect.outputs.python_projects || '[]' }}
+      python_nested: ${{ steps.detect.outputs.python_nested || '{}' }}
+      python_importlinters: ${{ steps.detect.outputs.python_importlinters || '[]' }}
+      typescript_roots: ${{ steps.detect.outputs.typescript_roots || '[]' }}
+      typescript_tsconfigs: ${{ steps.detect.outputs.typescript_tsconfigs || '[]' }}
+      typescript_nextjs: ${{ steps.detect.outputs.typescript_nextjs || '[]' }}
+      bundle_size_frontends: ${{ steps.detect.outputs.bundle_size_frontends }}
+      bundle_size_targets: ${{ steps.detect.outputs.bundle_size_targets || '[]' }}
+      terraform_dirs: ${{ steps.detect.outputs.terraform_dirs || '[]' }}
     steps:
       - name: "検査対象を判定"
         id: filter
@@ -141,11 +141,11 @@ jobs:
           # バンドルサイズの計測対象の判定が、マージコミットの親（マージ先）との差分を git diff で調べる
           fetch-depth: 2
 
-      # 収集も !cancelled() で動かす（1 つの種類が失敗しても、残りの種類は action が出力する）
-      - name: "検査対象を収集"
-        id: targets
+      # 検出も !cancelled() で動かす（1 つの種類が失敗しても、残りの種類は action が出力する）
+      - name: "検査対象を検出"
+        id: detect
         if: ${{ !cancelled() }}
-        uses: theindiehacker/github-workflows/.github/actions/targets@df289422ac03dbd9ba3029e940df6b370b6eddf3
+        uses: theindiehacker/github-workflows/.github/actions/detect@92693de5701bcbbd8a83e4de1b94d9c0e5de31ae
         with:
           python: ${{ steps.filter.outputs.python }}
           typescript: ${{ steps.filter.outputs.typescript }}
@@ -246,12 +246,12 @@ jobs:
             }
 
       - name: "📜 Python の規約を検査"
-        if: ${{ !cancelled() && steps.targets.outputs.python_pyprojects != '' }}
+        if: ${{ !cancelled() && steps.detect.outputs.python_pyprojects != '' }}
         timeout-minutes: 5
         uses: theindiehacker/github-workflows/.github/actions/python-rule@a17683a83dd64e209688cd051db5feefe606ae93
         with:
-          pyprojects: ${{ steps.targets.outputs.python_pyprojects }}
-          importlinters: ${{ steps.targets.outputs.python_importlinters }}
+          pyprojects: ${{ steps.detect.outputs.python_pyprojects }}
+          importlinters: ${{ steps.detect.outputs.python_importlinters }}
 
       - name: "✏️ ruff check"
         id: ruff

@@ -5,7 +5,7 @@ description: >-
 
 inputs:
   targets:
-    description: "targets の出力 bundle_size_targets"
+    description: "detect の出力 bundle_size_targets"
     required: true
   results:
     description: "計測結果（bundle-size-<key>.md）を置いたディレクトリ"
