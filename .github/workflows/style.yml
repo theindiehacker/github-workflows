@@ -441,11 +441,12 @@ jobs:
 
       # bun 本体は対象 repo の指定ではなく中央で固定する（bundle-size-measure も同じ値を使う）
       - name: "Install bun"
-        uses: theindiehacker/github-workflows/.github/actions/install-bun@a7539182106264f76d6627b37d8eed62cc60cff2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6  # v2.2.0
         with: &bun
-          # renovate: datasource=github-release-attachments depName=oven-sh/bun
-          version: bun-v1.4.3
-          sha256: 3e730528d89775f03f87f05c06787c4df4099d0a37f3f252e7b829cb23816e18
+          # renovate: datasource=github-releases depName=oven-sh/bun
+          bun-version: 1.4.3
+          # 既定では、PR のコードを実行した後の bun を post step がキャッシュに保存する
+          no-cache: true
 
       # bun install が失敗した場合のみ後続を skip する。biome / knip / tsc は互いに独立して実行するため、
       # 1 回の run で全ての違反が出揃う
@@ -530,7 +531,7 @@ jobs:
 
       - name: "Install bun"
         timeout-minutes: 5
-        uses: theindiehacker/github-workflows/.github/actions/install-bun@a7539182106264f76d6627b37d8eed62cc60cff2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6  # v2.2.0
         with: *bun
 
       # トークンは read のみのため、action による PR へのコメントは失敗する（ログのエラーは想定どおり）。
