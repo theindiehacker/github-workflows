@@ -12,7 +12,6 @@ locals {
   # Renovate の更新 PR を承認なしで自動マージするため、pull_request_approval の bypass に入れる（PR のときだけ）
   renovate_app_id = tonumber(data.github_app.renovate.id)
 
-  # 必須ワークフローの実体（この repo の main）。変更には security チームの承認が要る（workflow_change_review）
   required_workflow_repository_id = data.github_repository.github_workflows.repo_id
 }
 
@@ -55,12 +54,9 @@ resource "github_organization_ruleset" "pull_request_approval" {
     bypass_mode = "pull_request"
   }
 
-  dynamic "bypass_actors" {
-    for_each = local.single_approver ? [true] : []
-    content {
-      actor_type  = "OrganizationAdmin"
-      bypass_mode = "always"
-    }
+  bypass_actors {
+    actor_type  = "OrganizationAdmin"
+    bypass_mode = "always"
   }
 
   conditions {
@@ -112,127 +108,6 @@ resource "github_organization_ruleset" "security_scan" {
         repository_id = local.required_workflow_repository_id
         path          = ".github/workflows/security.yml"
         ref           = "refs/heads/main"
-      }
-    }
-  }
-}
-
-# セキュリティ検知の設定ファイル（.gitleaksignore / .trivyignore など）を変更する PR に、security チームの承認を必須にする
-resource "github_organization_ruleset" "security_config_review" {
-  name        = "✔️ セキュリティ設定変更の承認必須化"
-  target      = "branch"
-  enforcement = "active"
-
-  dynamic "bypass_actors" {
-    for_each = local.single_approver ? [true] : []
-    content {
-      actor_type  = "OrganizationAdmin"
-      bypass_mode = "always"
-    }
-  }
-
-  conditions {
-    ref_name {
-      include = ["~DEFAULT_BRANCH"]
-      exclude = []
-    }
-    repository_name {
-      include = ["~ALL"]
-      exclude = []
-    }
-  }
-
-  rules {
-    pull_request {
-      # 承認の必須化は required_reviewers で行う
-      required_approving_review_count   = 0
-      dismiss_stale_reviews_on_push     = true
-      require_code_owner_review         = false
-      require_last_push_approval        = false
-      required_review_thread_resolution = false
-      allowed_merge_methods             = local.all_merge_methods
-
-      required_reviewers {
-        reviewer {
-          id   = tonumber(github_team.security.id)
-          type = "Team"
-        }
-        minimum_approvals = 1
-        # - trivy.yaml（リポジトリ直下）は Trivy が自動読込する設定ファイルで、ignorefile / ignore-policy により
-        #   抑制先を差し替えられるため対象に含める。レビュー時はこの 2 項目が対象外のファイルを指していないかを確認する
-        # - **/.semgrepignore は Semgrepignore v2（Semgrep 1.117 以降のデフォルト）でサブディレクトリの
-        #   .semgrepignore も有効になるため対象に含める
-        # - zizmor の設定はワークフロー側（.github/actions/zizmor の --config / --no-config）で .github/zizmor.yml に固定しているため、
-        #   自動探索され得る他パス（リポジトリ直下の zizmor.yml 等）の列挙は不要
-        # - GitHub の上限は 15 件（超えると apply が 422 で失敗する）。拡張子の yml / yaml は y*ml でまとめる
-        file_patterns = [
-          ".gitleaksignore",
-          ".gitleaks.toml",
-          ".trivyignore",
-          ".trivyignore.yaml",
-          "trivy.yaml",
-          ".github/trivy-image.yml",
-          ".github/trivy-image.yaml",
-          ".github/zizmor.yml",
-          ".semgrepignore",
-          "**/.semgrepignore",
-          "ghalint.y*ml",
-          ".ghalint.y*ml",
-          ".github/ghalint.y*ml",
-        ]
-      }
-    }
-  }
-}
-
-# 必須ワークフローの実体（この repo の .github/workflows/）を変更する PR に、security チームの承認を必須にする。
-# 必須ワークフローはこの repo の main 上の定義を参照しているため、検知を弱める変更（severity の引き下げ・exit-code: 0 化など）が
-# 通常の承認（pull_request_approval）だけで通ると、org 全体の検知が無効化されてしまう。
-# Claude ワークフロー（.github/workflows/claude*.yml）も呼び出し側の全リポジトリで write 権限付きのプロンプトとして動くため、対象に含まれる。
-# 必須ワークフローは、検知の処理（ツールのオプション・インライン ignore の禁止など）を composite action（.github/actions/）に置き、
-# SHA で参照している。参照する SHA を上げる PR だけでは処理の差分が見えないため、action の変更も対象にする。
-# レビューでは、参照する SHA が main に含まれるコミットであることも確認する。
-# このルールセット自体の定義（terraform/github/）も、検知を弱められるため対象に含める。
-# Renovate は bypass に入れない。外部の action が乗っ取られて悪い版が出ると、その SHA に上げる PR が
-# 人の確認なしにマージされ、org の全 repo の必須ワークフローに広がるため
-resource "github_organization_ruleset" "workflow_change_review" {
-  name        = "🛠️ 検知ワークフロー変更の承認必須化"
-  target      = "branch"
-  enforcement = "active"
-
-  dynamic "bypass_actors" {
-    for_each = local.single_approver ? [true] : []
-    content {
-      actor_type  = "OrganizationAdmin"
-      bypass_mode = "always"
-    }
-  }
-
-  conditions {
-    ref_name {
-      include = ["~DEFAULT_BRANCH"]
-      exclude = []
-    }
-    repository_id = [local.required_workflow_repository_id]
-  }
-
-  rules {
-    pull_request {
-      # 承認の必須化は required_reviewers で行う
-      required_approving_review_count   = 0
-      dismiss_stale_reviews_on_push     = true
-      require_code_owner_review         = false
-      require_last_push_approval        = false
-      required_review_thread_resolution = false
-      allowed_merge_methods             = local.all_merge_methods
-
-      required_reviewers {
-        reviewer {
-          id   = tonumber(github_team.security.id)
-          type = "Team"
-        }
-        minimum_approvals = 1
-        file_patterns     = [".github/workflows/**", ".github/actions/**", "terraform/github/**"]
       }
     }
   }

@@ -12,11 +12,11 @@ pathspecs=(
   ':(glob)**/.pre-commit-config.yaml' ':(glob)**/.pre-commit-config.yml' ':(glob)**/.pre-commit-hooks.yaml' ':(glob)**/.pre-commit-hooks.yml'
 )
 
-# zizmor の --no-ignores は承認必須の .github/zizmor.yml による抑制まで無効化してしまうため、
+# zizmor の --no-ignores は .github/zizmor.yml による抑制まで無効化してしまうため、
 # インラインコメントのトークンの存在自体を禁止する（抑制は .github/zizmor.yml に限定する）。
 # 検査対象は zizmor がスキャンし得るファイルのみ（ドキュメント等の誤検知を避ける）
 if git grep -InE 'zizmor:[[:space:]]*ignore' -- "${pathspecs[@]}"; then
-  echo "::error::インラインの ignore コメントは使用できません。.github/zizmor.yml で抑制してください（変更にはセキュリティチームの承認が必要）"
+  echo "::error::インラインの ignore コメントは使用できません。.github/zizmor.yml で抑制してください"
   exit 1
 fi
 
@@ -29,9 +29,6 @@ echo "${SHA256}  ${archive}" | sha256sum -c -
 sudo tar -xz -C /usr/local/bin -f "${archive}" zizmor
 zizmor --version
 
-# 設定ファイルの自動探索はリポジトリ直下や入力ファイルの祖先ディレクトリの zizmor.yml / zizmor.yaml
-# にも及び、承認必須（「✔️ セキュリティ設定変更の承認必須化」）の対象外パスから検出を抑制できてしまうため、
-# 承認必須の .github/zizmor.yml に固定する（未作成なら設定なしで実行する）
 config_args=(--no-config)
 if [ -f .github/zizmor.yml ]; then
   config_args=(--config .github/zizmor.yml)

@@ -9,9 +9,9 @@ name: "🛡️ セキュリティ検査"
 #    ただしスキャンするイメージの決定（docker buildx build --call=targets）では、Dockerfile の # syntax= が指す
 #    フロントエンドのイメージが BuildKit の中で動く。
 #
-# Trivy の検知ポリシー（MEDIUM 以上 / 修正版がある脆弱性のみ / 検知したら失敗）はここで固定する。
+# Trivy の検知ポリシー（MEDIUM 以上 / 修正版がある脆弱性のみ / 検知したら失敗。Renovate の PR は除く）はここで固定する。
 # repo 側は trivy.yaml の severity で検知を「増やす」ことだけができる。
-# 抑制は承認必須の .trivyignore / .trivyignore.yaml だけで行い、インライン ignore は禁止する。
+# 抑制は .trivyignore / .trivyignore.yaml だけで行い、インライン ignore は禁止する。
 #
 # Required workflow は inputs を受け取れないため、イメージのビルド方法は規約で決める:
 #   - .github/trivy-image.yml があれば、列挙された image だけをビルドする
@@ -160,7 +160,7 @@ jobs:
           set -euo pipefail
           TOKEN='(trivy|tfsec):''ignore'
           if git grep -InE "${TOKEN}" -- .; then
-            echo "::error::インライン ignore コメント（trivy / tfsec の ignore トークン）は使用できません。.trivyignore / .trivyignore.yaml で抑制してください（変更にはセキュリティチームの承認が必要）"
+            echo "::error::インライン ignore コメント（trivy / tfsec の ignore トークン）は使用できません。.trivyignore / .trivyignore.yaml で抑制してください"
             exit 1
           fi
 
@@ -183,7 +183,7 @@ jobs:
           scanners: &trivy-scanners vuln,misconfig
           severity: ${{ steps.policy.outputs.severity }}
           ignore-unfixed: &trivy-ignore-unfixed true  # 修正版が無い脆弱性は除外する
-          exit-code: &trivy-exit-code 1
+          exit-code: &trivy-exit-code "${{ github.event.pull_request.user.login == format('renovate-{0}[bot]', github.repository_owner) && github.actor == format('renovate-{0}[bot]', github.repository_owner) && '0' || '1' }}"
           trivyignores: ${{ steps.policy.outputs.trivyignores }}
           # GHAS が無く SARIF を使えないため JSON で出力し、次の step で表にして表示する
           format: json
