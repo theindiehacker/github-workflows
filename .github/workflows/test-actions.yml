@@ -1,4 +1,3 @@
-# 動作確認用のコメント（一時）
 name: "🧪 action のテスト"
 
 # .github/actions の Python スクリプトの単体テスト（pytest）を実行する。
