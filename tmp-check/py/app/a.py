@@ -1,1 +1,1 @@
-VALUE = 1
+VALUE = 3
