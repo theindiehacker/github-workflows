@@ -214,7 +214,7 @@ jobs:
         id: images
         if: ${{ !cancelled() }}
         timeout-minutes: 5
-        uses: theindiehacker/github-workflows/.github/actions/trivy-images@090808b58a7d720e0ff85d4406b4af0293ddefee
+        uses: theindiehacker/github-workflows/.github/actions/trivy-images@b8650fd5bc60f4fb977530875690452187ee96a2
 
   scan-image:
     name: "イメージをスキャン (${{ matrix.label }})"
