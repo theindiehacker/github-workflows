@@ -21,12 +21,12 @@ def run(args: Sequence[str], *, check: bool = True, **kwargs: Any) -> subprocess
 
 def tee(args: Sequence[str]) -> tuple[int, str]:
     """コマンドを実行し、標準出力と標準エラーをログに流しながら受け取る（シェルの 2>&1 | tee と同じ）"""
-    with subprocess.Popen(
-        args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace"
-    ) as proc:
+    # バイト列で受けて 1 行ずつデコードする（UTF-8 でない出力があっても止まらないよう、読めない文字は置き換える）
+    with subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT) as proc:
         assert proc.stdout is not None
         lines = []
-        for line in proc.stdout:
+        for raw in proc.stdout:
+            line = raw.decode("utf-8", errors="replace")
             print(line, end="")
             lines.append(line)
     # シグナルで止まったときは、シェルと同じく 128 + シグナル番号にする
