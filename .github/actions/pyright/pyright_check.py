@@ -134,7 +134,7 @@ def check(status: int, log: str, *, config: str, generated: bool, nested: list[s
 
 
 def main() -> None:
-    # 別の uv.lock を持つ入れ子のプロジェクト（自分の matrix で検査される）。どれがどの uv.lock に属するかは python-targets が決める
+    # 別の uv.lock を持つ入れ子のプロジェクト（自分の matrix で検査される）。どれがどの uv.lock に属するかは targets が決める
     nested = json.loads(os.environ["NESTED"]).get(os.environ["PROJECT"], [])
     config, generated = prepare_config(nested)
 

@@ -9,7 +9,7 @@ inputs:
     description: "検査するプロジェクトのディレクトリ"
     required: true
   importlinters:
-    description: "python-targets の出力 importlinters"
+    description: "targets の出力 python_importlinters"
     required: true
 
 runs:

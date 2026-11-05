@@ -47,15 +47,15 @@ jobs:
       contents: read
       pull-requests: read  # paths-filter の変更ファイル一覧取得に必要
     outputs:
-      terraform: ${{ steps.filter.outputs.terraform }}
-      python_projects: ${{ steps.python.outputs.projects || '[]' }}
-      python_nested: ${{ steps.python.outputs.nested || '{}' }}
-      python_importlinters: ${{ steps.python.outputs.importlinters || '[]' }}
-      typescript_roots: ${{ steps.typescript.outputs.roots || '[]' }}
-      typescript_tsconfigs: ${{ steps.typescript.outputs.tsconfigs || '[]' }}
-      typescript_nextjs: ${{ steps.typescript.outputs.nextjs || '[]' }}
-      bundle_size_frontends: ${{ steps.bundle-size.outputs.frontends }}
-      bundle_size_targets: ${{ steps.bundle-size.outputs.targets || '[]' }}
+      python_projects: ${{ steps.targets.outputs.python_projects || '[]' }}
+      python_nested: ${{ steps.targets.outputs.python_nested || '{}' }}
+      python_importlinters: ${{ steps.targets.outputs.python_importlinters || '[]' }}
+      typescript_roots: ${{ steps.targets.outputs.typescript_roots || '[]' }}
+      typescript_tsconfigs: ${{ steps.targets.outputs.typescript_tsconfigs || '[]' }}
+      typescript_nextjs: ${{ steps.targets.outputs.typescript_nextjs || '[]' }}
+      bundle_size_frontends: ${{ steps.targets.outputs.bundle_size_frontends }}
+      bundle_size_targets: ${{ steps.targets.outputs.bundle_size_targets || '[]' }}
+      terraform_dirs: ${{ steps.targets.outputs.terraform_dirs || '[]' }}
     steps:
       - name: "検査対象を判定"
         id: filter
@@ -141,22 +141,15 @@ jobs:
           # バンドルサイズの計測対象の判定が、マージコミットの親（マージ先）との差分を git diff で調べる
           fetch-depth: 2
 
-      # 判定も !cancelled() で動かし、1 つの判定の失敗でほかの検査の対象が決まらなくならないようにする
-
-      - name: "Python の検査対象を割り当てる"
-        id: python
-        if: ${{ !cancelled() && steps.filter.outputs.python == 'true' }}
-        uses: theindiehacker/github-workflows/.github/actions/python-targets@a17683a83dd64e209688cd051db5feefe606ae93
-
-      - name: "TypeScript の検査対象を収集"
-        id: typescript
-        if: ${{ !cancelled() && steps.filter.outputs.typescript == 'true' }}
-        uses: theindiehacker/github-workflows/.github/actions/typescript-targets@a7539182106264f76d6627b37d8eed62cc60cff2
-
-      - name: "バンドルサイズの計測対象を判定"
-        id: bundle-size
+      # 収集も !cancelled() で動かす（1 つの種類が失敗しても、残りの種類は action が出力する）
+      - name: "検査対象を収集"
+        id: targets
         if: ${{ !cancelled() }}
-        uses: theindiehacker/github-workflows/.github/actions/bundle-size-targets@a7539182106264f76d6627b37d8eed62cc60cff2
+        uses: theindiehacker/github-workflows/.github/actions/targets@df289422ac03dbd9ba3029e940df6b370b6eddf3
+        with:
+          python: ${{ steps.filter.outputs.python }}
+          typescript: ${{ steps.filter.outputs.typescript }}
+          terraform: ${{ steps.filter.outputs.terraform }}
 
       # 以降の各ツールは !cancelled() で暗黙の success() を外し、前のツールが失敗しても全ツールの結果を 1 run で出す
 
@@ -253,12 +246,12 @@ jobs:
             }
 
       - name: "📜 Python の規約を検査"
-        if: ${{ !cancelled() && steps.python.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.targets.outputs.python_pyprojects != '' }}
         timeout-minutes: 5
         uses: theindiehacker/github-workflows/.github/actions/python-rule@a17683a83dd64e209688cd051db5feefe606ae93
         with:
-          pyprojects: ${{ steps.python.outputs.pyprojects }}
-          importlinters: ${{ steps.python.outputs.importlinters }}
+          pyprojects: ${{ steps.targets.outputs.python_pyprojects }}
+          importlinters: ${{ steps.targets.outputs.python_importlinters }}
 
       - name: "✏️ ruff check"
         id: ruff
@@ -285,12 +278,14 @@ jobs:
         run: ruff check --no-fix --output-format=github --select S --ignore S101
 
   # Terraform の validate / test を行う（init が要るため lint とは分ける）。
-  # terraform init / test は PR に書かれた provider・module・data source を実行する
+  # terraform init / test は PR に書かれた provider・module・data source を実行する。
+  # 変更があったディレクトリではなく repo 全体を検査する（examples/ はモジュールを相対パスで呼ぶため、
+  # モジュールだけを変えた PR で examples が壊れても検知できるようにする）
   terraform:
     name: "Terraform を検査"
     needs: lint
     # lint で違反が出ても、同じ run で結果を出す
-    if: ${{ !cancelled() && needs.lint.outputs.terraform == 'true' }}
+    if: ${{ !cancelled() && needs.lint.outputs.terraform_dirs != '[]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -306,20 +301,12 @@ jobs:
         with:
           persist-credentials: false
 
-      # 変更があったディレクトリではなく repo 全体を検査する（examples/ はモジュールを相対パスで呼ぶため、
-      # モジュールだけを変えた PR で examples が壊れても検知できるようにする）
-      - name: "検査対象を収集"
-        id: dirs
-        uses: theindiehacker/github-workflows/.github/actions/terraform-dirs@a7539182106264f76d6627b37d8eed62cc60cff2
-
       - name: "Setup terraform"
-        if: steps.dirs.outputs.dirs != '[]'
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4.0.1
         with: *setup-terraform
 
       # provider は lock ファイルの checksum と一致したものだけが使われるため、キャッシュの中身は init 時に検証される
       - name: "provider のキャッシュ"
-        if: steps.dirs.outputs.dirs != '[]'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: ${{ runner.temp }}/terraform-plugin-cache
@@ -331,13 +318,11 @@ jobs:
       # fork からの PR では取得できないため、失敗しても続ける（registry を使わない repo には影響しない）
       - name: "registry.fastship.jp のトークンを取得"
         id: registry
-        if: steps.dirs.outputs.dirs != '[]'
         continue-on-error: true
         uses: theindiehacker/registry-fastship-action@84b7ba2adebf7524343ee48a7540a66ebaeb1a13  # v1.0.0
 
       - name: "terraform init"
         id: init
-        if: steps.dirs.outputs.dirs != '[]'
         uses: theindiehacker/github-workflows/.github/actions/terraform@b3354ce6e3a927e159bfca703a1d9530eec4af45
         env:
           TF_PLUGIN_CACHE_DIR: ${{ runner.temp }}/terraform-plugin-cache
@@ -345,7 +330,7 @@ jobs:
           TF_TOKEN_registry_fastship_jp: ${{ steps.registry.outputs.token }}
         with:
           command: init
-          paths: ${{ steps.dirs.outputs.dirs }}
+          paths: ${{ needs.lint.outputs.terraform_dirs }}
 
       - name: "terraform validate"
         # init が失敗しても、init できたディレクトリは validate する
