@@ -1,9 +1,0 @@
-name: "actionlint でワークフローの構文を検査"
-description: "導入済みの actionlint で .github/workflows/ を検査する"
-
-runs:
-  using: composite
-  steps:
-    - name: "actionlint"
-      shell: bash
-      run: bash "${GITHUB_ACTION_PATH}/actionlint.sh"

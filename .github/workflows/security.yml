@@ -133,7 +133,9 @@ jobs:
       - name: "🛡️ ghalint"
         if: ${{ !cancelled() && steps.filter.outputs.ghalint == 'true' }}
         timeout-minutes: 5
-        uses: theindiehacker/github-workflows/.github/actions/ghalint@dbb46dad5aa58ee1f012b982d6299ab277348d29
+        shell: bash
+        # ghalint run は個別ファイル指定ができないため、.github/workflows/ 全体が対象になる
+        run: ghalint run
 
       - name: "Setup zizmor"
         if: ${{ !cancelled() && (steps.filter.outputs.zizmor_config == 'true' || steps.filter.outputs.zizmor_targets == 'true') }}

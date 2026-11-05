@@ -173,7 +173,11 @@ jobs:
       - name: "🧹 actionlint"
         if: ${{ !cancelled() && steps.filter.outputs.actionlint == 'true' }}
         timeout-minutes: 5
-        uses: theindiehacker/github-workflows/.github/actions/actionlint@dbb46dad5aa58ee1f012b982d6299ab277348d29
+        shell: bash
+        # workflow command 形式で出力し、検出箇所を PR に annotation 表示する
+        run: |
+          # shellcheck disable=SC2016 # $err は actionlint のテンプレートの変数
+          actionlint -format $'{{range $err := .}}::error file={{$err.Filepath}},line={{$err.Line}},col={{$err.Column}}::{{$err.Message}}\n{{end}}'
 
       - name: "Setup shellcheck"
         if: ${{ !cancelled() && steps.filter.outputs.shellcheck == 'true' }}

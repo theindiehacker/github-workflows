@@ -1,9 +1,0 @@
-name: "ghalint で workflow のセキュリティポリシーを検査"
-description: "導入済みの ghalint で .github/workflows/ 全体を検査する"
-
-runs:
-  using: composite
-  steps:
-    - name: "ghalint"
-      shell: bash
-      run: bash "${GITHUB_ACTION_PATH}/ghalint.sh"
