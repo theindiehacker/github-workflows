@@ -3,10 +3,10 @@ import json
 import gha
 import pytest
 
-import targets
+import detect
 
 PACKAGE_NEXT = '{"dependencies":{"next":"15.0.0"}}'
-PATTERN_NEXT = targets.FRAMEWORKS["next"]
+PATTERN_NEXT = detect.FRAMEWORKS["next"]
 
 
 @pytest.fixture
@@ -33,14 +33,14 @@ def commit(root, files):
 
 
 def test_relative():
-    assert targets.relative("backend", "backend") == "."
-    assert targets.relative("backend/svc", "backend") == "svc"
-    assert targets.relative("backend/svc", ".") == "backend/svc"
-    assert targets.relative("backend/svc", "") == "backend/svc"
+    assert detect.relative("backend", "backend") == "."
+    assert detect.relative("backend/svc", "backend") == "svc"
+    assert detect.relative("backend/svc", ".") == "backend/svc"
+    assert detect.relative("backend/svc", "") == "backend/svc"
 
 
 def test_nested():
-    assert targets.nested([".", "backend", "backend/svc", "backend-2"]) == {
+    assert detect.nested([".", "backend", "backend/svc", "backend-2"]) == {
         ".": ["backend", "backend/svc", "backend-2"],
         "backend": ["svc"],
         "backend/svc": [],
@@ -61,7 +61,7 @@ def test_python(repo):
             "docs/pyproject.toml": "[tool.ruff]\n",  # [project] などが無いものは割り当てない
         }
     )
-    assert targets.python() == {
+    assert detect.python() == {
         "python_projects": ["backend", "."],
         "python_nested": {"backend": [], ".": ["backend"]},
         "python_pyprojects": [
@@ -79,7 +79,7 @@ def test_python(repo):
 
 def test_python_without_lock(repo):
     repo({"app/pyproject.toml": "[project]\n"})
-    assert targets.python() == {
+    assert detect.python() == {
         "python_projects": [],
         "python_nested": {},
         "python_pyprojects": [{"path": "app/pyproject.toml", "project": "", "rel": "app"}],
@@ -103,7 +103,7 @@ def test_typescript(repo):
             "frontend/node_modules/x/tsconfig.json": "{}",
         }
     )
-    assert targets.typescript() == {
+    assert detect.typescript() == {
         "typescript_roots": ["broken", "frontend", "tools"],
         "typescript_tsconfigs": ["broken", "frontend", "frontend/packages/ui", "only-config", "tools"],
         "typescript_nextjs": ["frontend", "tools"],
@@ -112,7 +112,7 @@ def test_typescript(repo):
 
 def test_typescript_root_package(repo):
     repo({"package.json": "{}", "tsconfig.json": "{}", "packages/a/package.json": "{}"})
-    result = targets.typescript()
+    result = detect.typescript()
     assert result["typescript_roots"] == ["."]
     assert result["typescript_tsconfigs"] == ["."]
 
@@ -129,7 +129,7 @@ def test_typescript_root_package(repo):
 )
 def test_has_dependency(repo, package, expected):
     repo({"package.json": package})
-    assert targets.has_dependency(".", "next") is expected
+    assert detect.has_dependency(".", "next") is expected
 
 
 def test_bundle_size(repo):
@@ -148,7 +148,7 @@ def test_bundle_size(repo):
         }
     )
     commit(root, {"frontend/page.tsx": "2"})
-    assert targets.bundle_size() == {
+    assert detect.bundle_size() == {
         "bundle_size_frontends": "true",
         # key は変更がないものも含めた通し番号（frontend が 0、site が 1）
         "bundle_size_targets": [{"dir": "frontend", "pattern": PATTERN_NEXT, "changed": True, "key": "0"}],
@@ -159,25 +159,25 @@ def test_bundle_size_at_repo_root(repo):
     """フロントエンドが repo のルートにあると、どのファイルを変えても計測する"""
     root = repo({"package.json": PACKAGE_NEXT, "bun.lock": "", "docs.md": ""})
     commit(root, {"docs.md": "x"})
-    result = targets.bundle_size()
+    result = detect.bundle_size()
     assert result["bundle_size_targets"] == [{"dir": ".", "pattern": PATTERN_NEXT, "changed": True, "key": "0"}]
 
 
 def test_bundle_size_unchanged(repo):
     root = repo({"frontend/package.json": PACKAGE_NEXT, "frontend/bun.lock": "", "docs.md": ""})
     commit(root, {"docs.md": "x"})
-    assert targets.bundle_size() == {"bundle_size_frontends": "true", "bundle_size_targets": []}
+    assert detect.bundle_size() == {"bundle_size_frontends": "true", "bundle_size_targets": []}
 
 
 def test_bundle_size_without_parent_commit(repo):
     """親コミットが無く git diff が失敗するときは、変更ありとして計測する"""
     repo({"frontend/package.json": PACKAGE_NEXT, "frontend/bun.lock": ""})
-    assert targets.bundle_size()["bundle_size_targets"][0]["changed"] is True
+    assert detect.bundle_size()["bundle_size_targets"][0]["changed"] is True
 
 
 def test_bundle_size_none(repo):
     repo({"README.md": ""})
-    assert targets.bundle_size() == {"bundle_size_frontends": "false", "bundle_size_targets": []}
+    assert detect.bundle_size() == {"bundle_size_frontends": "false", "bundle_size_targets": []}
 
 
 def test_terraform(repo):
@@ -194,20 +194,20 @@ def test_terraform(repo):
             "README.md": "",
         }
     )
-    assert targets.terraform() == {"terraform_dirs": [".", ".terraform.d", "infra", "infra/modules/vpc", "日本語"]}
+    assert detect.terraform() == {"terraform_dirs": [".", ".terraform.d", "infra", "infra/modules/vpc", "日本語"]}
 
 
 @pytest.mark.parametrize("name", ["a\nb", "a\rb"])
 def test_terraform_rejects_line_break(repo, name):
     repo({f"{name}/main.tf": ""})
     with pytest.raises(ValueError, match="改行"):
-        targets.terraform()
+        detect.terraform()
 
 
 def test_main_collects_only_enabled(repo, outputs, enable):
     repo({"uv.lock": "", "tsconfig.json": "{}", "main.tf": ""})
     enable("PYTHON")
-    assert targets.main() == 0
+    assert detect.main() == 0
     assert set(outputs()) == {
         "bundle_size_frontends",
         "bundle_size_targets",
@@ -221,7 +221,7 @@ def test_main_collects_only_enabled(repo, outputs, enable):
 def test_main_collects_all(repo, outputs, enable):
     repo({"uv.lock": "", "package.json": "{}", "tsconfig.json": "{}", "main.tf": ""})
     enable("PYTHON", "TYPESCRIPT", "TERRAFORM")
-    assert targets.main() == 0
+    assert detect.main() == 0
     result = parsed(outputs)
     assert result["python_projects"] == ["."]
     assert result["typescript_roots"] == ["."]
@@ -234,7 +234,7 @@ def test_main_without_inputs(repo, outputs, monkeypatch):
     for name in ("PYTHON", "TYPESCRIPT", "TERRAFORM"):
         monkeypatch.delenv(name, raising=False)
     repo({"main.tf": ""})
-    assert targets.main() == 0
+    assert detect.main() == 0
     assert set(outputs()) == {"bundle_size_frontends", "bundle_size_targets"}
 
 
@@ -242,7 +242,7 @@ def test_main_continues_after_failure(repo, outputs, enable, capsys):
     """1 つの種類が失敗しても残りは出力し、失敗した種類の出力は残さない"""
     repo({"a\nb/main.tf": "", "tsconfig.json": "{}", "uv.lock": ""})
     enable("PYTHON", "TYPESCRIPT", "TERRAFORM")
-    assert targets.main() == 1
+    assert detect.main() == 1
     result = parsed(outputs)
     assert "terraform_dirs" not in result
     assert result["python_projects"] == ["."]
@@ -262,14 +262,14 @@ def test_main_failure_leaves_no_partial_output(repo, outputs, enable, monkeypatc
         return original(command, *args)
 
     monkeypatch.setattr(gha, "git_z", fail_on_grep)
-    assert targets.main() == 1
+    assert detect.main() == 1
     assert not any(name.startswith("python_") for name in outputs())
 
 
 def test_main_logs_outputs(repo, outputs, enable, capsys):
     repo({"日本語/main.tf": ""})
     enable("TERRAFORM")
-    assert targets.main() == 0
+    assert detect.main() == 0
     log = capsys.readouterr().out
     assert 'terraform_dirs=["日本語"]\n' in log
     assert "bundle_size_frontends=false\n" in log
