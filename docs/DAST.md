@@ -29,7 +29,7 @@ DAST でしか見つからない例: レスポンスヘッダー・Cookie 属性
 | F1 | PR ごとに、PR のコードから起動したアプリをスキャンする |
 | F2 | 画面はクロール＋受動スキャン、API は OpenAPI を元に能動スキャン |
 | F3 | **Medium 以上を検知したら失敗**（Trivy と同じ下限）。Low 以下はレポートのみ |
-| F4 | 抑制は承認必須の設定ファイルでのみ行い、理由を必須にする |
+| F4 | 抑制は設定ファイルでのみ行い、理由を必須にする |
 | F5 | レポートを log に出し、artifact に 30 日保存する |
 | F6 | 週次で main をフルスキャン（画面も能動スキャン）し、検知を Issue にする |
 | F7 | 設定ファイルの無い repo は skip する（成功扱い） |
@@ -100,7 +100,7 @@ targets:
   - url: http://localhost:8000
     type: api                  # API: OpenAPI から能動スキャン
     openapi: /openapi.json
-# 抑制（security チームの承認が要る）
+# 抑制
 ignores:
   - rule: 10055                # CSP
     url: ^http://localhost:3000/
@@ -131,10 +131,8 @@ flowchart LR
   alert["⚠️ Medium 以上を検知"] --> fix{"直せる?"}
   fix -->|はい| code["コードを直す"]
   fix -->|"いいえ / 誤検知"| ign[".github/dast.yml の<br/>ignores に理由付きで足す"]
-  ign --> sec["👥 security チームが承認"]
 ```
 
-- `.github/dast.yml` を「✔️ セキュリティ設定変更の承認必須化」の File patterns に足す。削除による opt-out も承認が要る
 - ZAP にはインラインの抑制コメントが無いため、Trivy / Semgrep のような禁止処理は要らない
 
 ## 5. 🔧 変更するファイル
@@ -143,7 +141,7 @@ flowchart LR
 |:--|:--|:--|:--:|
 | github-workflows | `.github/actions/dast/` | 起動・ZAP 実行・レポート保存の composite action | 1 |
 | github-workflows | `.github/workflows/dast.yml` | PR の必須ワークフロー | 1 |
-| github-workflows | `terraform/github/rulesets.tf` | 必須ワークフローと承認必須ファイルに追加 | 1 |
+| github-workflows | `terraform/github/rulesets.tf` | 必須ワークフローに追加 | 1 |
 | app.fastship.jp | `.github/dast.yml` / `compose.yaml` | スキャン対象と起動方法 | 1 |
 | github-workflows | `.github/workflows/dast-weekly.yml` | 週次フルスキャン（reusable） | 2 |
 | app.fastship.jp | `.github/workflows/dast-weekly.yml` | 週次スキャンの呼び出し | 2 |

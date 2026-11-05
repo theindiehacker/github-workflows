@@ -1,4 +1,3 @@
-# zizmor の設定。変えるときは、org のルールセット「✔️ セキュリティ設定変更の承認必須化」でセキュリティチームの承認が要る
 rules:
   dangerous-triggers:
     ignore:

@@ -8,7 +8,6 @@ Organization の設定は Terraform（[`terraform/github/`](../terraform/github/
 | 設定 | 管理する場所 |
 |:--|:--|
 | ベース権限・リポジトリ作成・fork の禁止 | [`organization.tf`](../terraform/github/organization.tf) |
-| security チームとメンバー・Organization role | [`teams.tf`](../terraform/github/teams.tf) |
 | ルールセット（branch / push / tag） | [`rulesets.tf`](../terraform/github/rulesets.tf) |
 | 実行できる action の制限・`GITHUB_TOKEN` のデフォルト権限 | [`actions.tf`](../terraform/github/actions.tf) |
 | 二要素認証・組織シークレット・Claude GitHub App・Immutable releases | 手作業（「0.」「4.」「5.」） |
@@ -79,20 +78,16 @@ terraform -chdir=terraform/github apply
 ---
 ## 2. 📚 ルールセット
 
-security チーム（`teams.tf`）は、Gitleaks や Trivy などがセキュリティ検知をした時に対応するチーム。セキュリティの設定・検知ワークフローを変える PR は、このチームの承認がないとマージできない。
-
 | ルールセット | 対象 | 内容 |
 |:--|:--|:--|
 | 🚫 main への直接 push 禁止 | 全 repo の default branch | 削除・force push の禁止、PR の必須化 |
-| ✅ PR の承認を必須化 | 全 repo の default branch | 人間の承認 1 名以上。bypass は Renovate 用 GitHub App（`renovate-<org 名>`。PR のときだけ） |
+| ✅ PR の承認を必須化 | 全 repo の default branch | 人間の承認 1 名以上。bypass は Renovate 用 GitHub App（`renovate-<org 名>`。PR のときだけ）と org 管理者 |
 | 🛡️ 脆弱性・IaC 設定ミス検知 | 全 repo の default branch | `security.yml` の成功を必須にする |
-| ✔️ セキュリティ設定変更の承認必須化 | 全 repo の default branch | `.gitleaksignore` / `.trivyignore` などの変更に security チームの承認を必須にする |
-| 🛠️ 検知ワークフロー変更の承認必須化 | この repo の default branch | `.github/workflows/**`・`.github/actions/**`・`terraform/github/**` の変更に security チームの承認を必須にする。Renovate の PR も対象（bypass しない） |
 | ✏️ スタイルチェック | 全 repo の default branch | `style.yml` の成功を必須にする |
 | 🚫 機密ファイルの push 禁止 | 全 repo | `.env`・秘密鍵・`*.tfstate` などの push を拒否する |
 | 🔒 リリースタグの変更禁止 | この repo の `v*` タグ | タグの更新・削除を禁止する（「5.」） |
 
-> ⚠️ 承認者本人が作成した PR は自己承認できない。security チームのメンバーが 1 人だけの間は、承認を必須にする 3 つのルールセットの bypass に org 管理者が入る（`teams.tf` の `security_members` から決まる）。
+> ⚠️ 承認者本人が作成した PR は自己承認できないため、「✅ PR の承認を必須化」の bypass に org 管理者を入れている。
 
 ### 🛡️ 脆弱性・IaC 設定ミス検知
 
@@ -104,7 +99,7 @@ security チーム（`teams.tf`）は、Gitleaks や Trivy などがセキュリ
 | ghalint | ワークフローのセキュリティポリシー（permissions 未設定・action の SHA 未固定など）。ワークフローを変更したときだけ |
 | zizmor | GitHub Actions の設定の脆弱性（severity HIGH 以上）。ワークフロー・action 定義などを変更したときだけ |
 | Semgrep | アプリケーションコード（ルールセット `p/default`・severity ERROR）。PR で新規に増えた検出のみ |
-| Trivy | 依存パッケージの脆弱性と IaC の設定ミス（MEDIUM 以上・修正版があるもの）、Dockerfile からビルドしたイメージの脆弱性 |
+| Trivy | 依存パッケージの脆弱性と IaC の設定ミス（MEDIUM 以上・修正版があるもの）、Dockerfile からビルドしたイメージの脆弱性。Renovate の PR は報告だけで失敗しない |
 
 ### ✏️ スタイルチェック
 
