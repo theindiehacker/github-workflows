@@ -1,0 +1,28 @@
+name: "terraform を実行"
+description: >-
+  terraform の fmt（-check）/ init（-backend=false）/ test をディレクトリごとに実行する（terraform は事前に導入しておく）。
+  provider のキャッシュ（TF_PLUGIN_CACHE_DIR。init では必須）と private の Module Registry のトークン（TF_TOKEN_<host>）は、呼び出す step の env で渡す
+
+inputs:
+  command:
+    description: "実行するコマンド（fmt / init / test）"
+    required: true
+  paths:
+    description: "対象の JSON 配列（fmt は変更したファイル、init / test はディレクトリ）"
+    required: true
+
+outputs:
+  initialized:
+    description: "init できたディレクトリの JSON 配列（失敗したディレクトリがあっても出す。command が init のときだけ）"
+    value: ${{ steps.terraform.outputs.initialized }}
+
+runs:
+  using: composite
+  steps:
+    - name: "terraform"
+      id: terraform
+      shell: bash
+      env:
+        COMMAND: ${{ inputs.command }}
+        PATHS: ${{ inputs.paths }}
+      run: bash "${GITHUB_ACTION_PATH}/terraform.sh"
