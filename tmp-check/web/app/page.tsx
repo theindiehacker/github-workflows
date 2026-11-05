@@ -1,3 +1,9 @@
+import { Counter } from "./counter";
+
 export default function Page() {
-	return <main>動作確認</main>;
+	return (
+		<main>
+			<Counter />
+		</main>
+	);
 }
