@@ -208,9 +208,10 @@ jobs:
       - name: "🏗️ terraform fmt"
         if: ${{ !cancelled() && steps.filter.outputs.terraform_fmt == 'true' }}
         timeout-minutes: 5
-        uses: theindiehacker/github-workflows/.github/actions/terraform-fmt@a7539182106264f76d6627b37d8eed62cc60cff2
+        uses: theindiehacker/github-workflows/.github/actions/terraform@b3354ce6e3a927e159bfca703a1d9530eec4af45
         with:
-          files: ${{ steps.filter.outputs.terraform_fmt_files }}
+          command: fmt
+          paths: ${{ steps.filter.outputs.terraform_fmt_files }}
 
       # checksums は release の zip の SHA-256。action がダウンロード後に検証する
       - name: "Setup tflint"
@@ -337,13 +338,14 @@ jobs:
       - name: "terraform init"
         id: init
         if: steps.dirs.outputs.dirs != '[]'
-        uses: theindiehacker/github-workflows/.github/actions/terraform-init@a7539182106264f76d6627b37d8eed62cc60cff2
+        uses: theindiehacker/github-workflows/.github/actions/terraform@b3354ce6e3a927e159bfca703a1d9530eec4af45
         env:
+          TF_PLUGIN_CACHE_DIR: ${{ runner.temp }}/terraform-plugin-cache
           # terraform はこのホストへのリクエストにだけトークンを付ける。取得できなかったときは空になり、registry を使わない repo には影響しない
           TF_TOKEN_registry_fastship_jp: ${{ steps.registry.outputs.token }}
         with:
-          dirs: ${{ steps.dirs.outputs.dirs }}
-          plugin-cache-dir: ${{ runner.temp }}/terraform-plugin-cache
+          command: init
+          paths: ${{ steps.dirs.outputs.dirs }}
 
       - name: "terraform validate"
         # init が失敗しても、init できたディレクトリは validate する
@@ -358,11 +360,12 @@ jobs:
       - name: "terraform test"
         # init / validate が失敗しても、init できたディレクトリのテストは実行する
         if: ${{ !cancelled() && steps.init.outcome != 'skipped' }}
-        uses: theindiehacker/github-workflows/.github/actions/terraform-test@a7539182106264f76d6627b37d8eed62cc60cff2
+        uses: theindiehacker/github-workflows/.github/actions/terraform@b3354ce6e3a927e159bfca703a1d9530eec4af45
         env:
           TF_PLUGIN_CACHE_DIR: ${{ runner.temp }}/terraform-plugin-cache
         with:
-          dirs: ${{ steps.init.outputs.initialized || '[]' }}
+          command: test
+          paths: ${{ steps.init.outputs.initialized || '[]' }}
 
   python:
     name: "🚧 型・依存関係を検査 (${{ matrix.project }})"
