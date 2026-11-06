@@ -84,7 +84,6 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           show_full_output: false
           # node・npx・bun は任意のコードを実行できるが、許可する。起動できるのは書き込み権限のあるメンバーだけ。
-          # 書き込みトークン (Claude App) が漏れても、ruleset で main へのマージ (1 名以上の approve が要る) とリリースタグの作成 (GitHub Actions だけ) はできない
           claude_args: |
             --model claude-opus-5-5
             --max-turns 200
