@@ -76,7 +76,7 @@ jobs:
       # @claude で頼むセキュリティ監査 (cloudflare/security-audit-skill) を入れる
       - name: "🛡️ セキュリティ監査の skill を入れる"
         id: security-audit
-        uses: theindiehacker/github-workflows/.github/actions/security-audit@764afe95834308b31202b5740cc059567d6afc2b
+        uses: $/.github/actions/security-audit
 
       - name: Run Claude Code
         uses: anthropics/claude-code-action@db77d4d3c98f3f6380e7cd45ffba2342a3dbde3c  # v1.0.254
