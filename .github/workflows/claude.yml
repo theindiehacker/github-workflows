@@ -83,7 +83,6 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           show_full_output: false
-          # Claude が実行できるコマンドは、action の既定 (git add / commit / rm と push) と、--allowedTools の node・npx・bun。
           # node・npx・bun は任意のコードを実行できるが、許可する。起動できるのは書き込み権限のあるメンバーだけ
           # (job の if で絞り、CONTRIBUTOR で入った人も action が API で write / admin かを確かめる)。
           # 書き込みトークン (Claude App) が漏れても、ruleset で main へのマージ (1 名以上の approve が要る) とリリースタグの作成 (GitHub Actions だけ) はできない
