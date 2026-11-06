@@ -25,6 +25,11 @@ data "github_app" "renovate" {
   slug = "renovate-${local.owner}"
 }
 
+# Release ワークフローが GITHUB_TOKEN でリリースタグを作るため、「🏷️ リリースタグの作成を制限」の bypass に入れる
+data "github_app" "github_actions" {
+  slug = "github-actions"
+}
+
 # 二要素認証の必須化は API で変えられないため、UI で設定し、ここでは plan のときに確かめるだけにする
 check "two_factor_requirement" {
   assert {

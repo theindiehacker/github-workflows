@@ -91,10 +91,20 @@ jobs:
           # Claude が実行できるコマンドは、action の既定 (git add / commit / rm と push) と、--allowedTools の node・npx・bun。
           # node・npx・bun は任意のコードを実行できるが、許可する。起動できるのは書き込み権限のあるメンバーだけ
           # (job の if で絞り、CONTRIBUTOR で入った人も action が API で write / admin かを確かめる)。
-          # 書き込みトークンが漏れても、main へのマージは ruleset で 1 名以上の approve が要るため、できない
+          # 書き込みトークン (Claude App) が漏れても、ruleset で main へのマージ (1 名以上の approve が要る) とリリースタグの作成 (GitHub Actions だけ) はできない
           claude_args: |
             --model claude-opus-5-5
-            --max-turns 200
+            --max-turns 300
             ${{ inputs.effort && format('--effort {0}', inputs.effort) }}
             --add-dir ${{ steps.security-audit.outputs.out_dir }}
             --allowedTools "Skill(security-audit),Bash(node:*),Bash(npx:*),Bash(bun:*)"
+
+      # 監査が途中で切れても (時間切れを含む)、skill の出力 (REPORT.md・findings.json など) を取り出せるよう残す。
+      # 監査を頼まれていなければ出力が無いため、何も残さない
+      - name: "📦 セキュリティ監査の結果を残す"
+        if: always() && steps.security-audit.outputs.out_dir != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: security-audit
+          path: ${{ steps.security-audit.outputs.out_dir }}
+          if-no-files-found: ignore

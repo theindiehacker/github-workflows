@@ -12,6 +12,9 @@ locals {
   # Renovate の更新 PR を承認なしで自動マージするため、pull_request_approval の bypass に入れる（PR のときだけ）
   renovate_app_id = tonumber(data.github_app.renovate.id)
 
+  # Release ワークフローの GITHUB_TOKEN でリリースタグを作るため、「🏷️ リリースタグの作成を制限」の bypass に入れる
+  github_actions_app_id = tonumber(data.github_app.github_actions.id)
+
   required_workflow_repository_id = data.github_repository.github_workflows.repo_id
 }
 
@@ -211,5 +214,33 @@ resource "github_organization_ruleset" "release_tags" {
     update           = true
     deletion         = true
     non_fast_forward = true
+  }
+}
+
+# リリースタグを作れるのを、GitHub Actions (Release ワークフローの GITHUB_TOKEN) だけにする。
+# @claude の job で Claude App の書き込みトークンが漏れても、レビューを経ないコミットにリリースタグを付けられないようにするため
+# (claude-code-action は Claude を動かす前に、checkout が残す GITHUB_TOKEN を消して Claude App のトークンに替える)。
+# release_tags とは分けること。同じルールセットで bypass すると、GitHub Actions に更新・削除も許してしまう
+resource "github_organization_ruleset" "release_tag_creation" {
+  name        = "🏷️ リリースタグの作成を制限"
+  target      = "tag"
+  enforcement = "active"
+
+  bypass_actors {
+    actor_type  = "Integration"
+    actor_id    = local.github_actions_app_id
+    bypass_mode = "always"
+  }
+
+  conditions {
+    ref_name {
+      include = ["refs/tags/v*"]
+      exclude = []
+    }
+    repository_id = [local.required_workflow_repository_id]
+  }
+
+  rules {
+    creation = true
   }
 }
