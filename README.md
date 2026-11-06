@@ -1,5 +1,5 @@
 # 🛠️ github-workflows ( 👉 FastShip CLI )
-Organization 共通の CI / ruleset / Lefthook / Taskfile / Claude Code プラグインを管理するリポジトリ
+Organization 共通の CI / ruleset / Lefthook / Taskfile を管理するリポジトリ
 
 ```mermaid
 graph TD;
