@@ -28,8 +28,8 @@ name: "🛡️ セキュリティ検査"
 #       build-args:                     # 任意
 #         INFRASTRUCTURE: gcp
 #
-# 必須ワークフローは対象 repo で動くため、この repo の action はパスではなく SHA で参照する
-# （action を変えたら、uses の SHA も上げる）
+# 必須ワークフローは対象 repo で動くため、この repo の action は ./ ではなく $/ で参照する
+# （$/ は対象 repo ではなく、このワークフローと同じコミットの action を指す）
 
 # main への直 push はルールセットで禁止されているため、PR だけを対象にする
 on:
@@ -105,7 +105,7 @@ jobs:
       - name: "🔑 Gitleaks"
         if: ${{ !cancelled() }}
         timeout-minutes: 15
-        uses: theindiehacker/github-workflows/.github/actions/gitleaks@a7539182106264f76d6627b37d8eed62cc60cff2
+        uses: $/.github/actions/gitleaks
         with:
           # renovate: datasource=github-release-attachments depName=gitleaks/gitleaks
           version: v8.30.1
@@ -116,7 +116,7 @@ jobs:
       - name: "🛡️ ghalint"
         if: ${{ !cancelled() && steps.filter.outputs.ghalint == 'true' }}
         timeout-minutes: 5
-        uses: theindiehacker/github-workflows/.github/actions/ghalint@a7539182106264f76d6627b37d8eed62cc60cff2
+        uses: $/.github/actions/ghalint
         with:
           # renovate: datasource=github-release-attachments depName=suzuki-shunsuke/ghalint
           version: v1.5.6
@@ -125,7 +125,7 @@ jobs:
       - name: "🛡️ zizmor"
         if: ${{ !cancelled() && (steps.filter.outputs.zizmor_config == 'true' || steps.filter.outputs.zizmor_targets == 'true') }}
         timeout-minutes: 10
-        uses: theindiehacker/github-workflows/.github/actions/zizmor@a7539182106264f76d6627b37d8eed62cc60cff2
+        uses: $/.github/actions/zizmor
         with:
           # renovate: datasource=github-release-attachments depName=zizmorcore/zizmor
           version: v1.31.1
@@ -138,7 +138,7 @@ jobs:
       - name: "🛡️ Semgrep"
         if: ${{ !cancelled() }}
         timeout-minutes: 15
-        uses: theindiehacker/github-workflows/.github/actions/semgrep@a7539182106264f76d6627b37d8eed62cc60cff2
+        uses: $/.github/actions/semgrep
         with:
           # renovate: datasource=docker depName=semgrep/semgrep
           version: 1.175.1
@@ -148,7 +148,7 @@ jobs:
       - name: "Trivy の検知する severity / 抑制ファイルを決定"
         id: policy
         if: ${{ !cancelled() }}
-        uses: theindiehacker/github-workflows/.github/actions/trivy-policy@a7539182106264f76d6627b37d8eed62cc60cff2
+        uses: $/.github/actions/trivy-policy
 
       - name: "Trivy のインライン ignore コメントの禁止"
         # Trivy にはインライン ignore を無効化するオプションが無いため、コメント自体を禁止する。
@@ -214,7 +214,7 @@ jobs:
         id: images
         if: ${{ !cancelled() }}
         timeout-minutes: 5
-        uses: theindiehacker/github-workflows/.github/actions/trivy-images@a7539182106264f76d6627b37d8eed62cc60cff2
+        uses: $/.github/actions/trivy-images
 
   scan-image:
     name: "イメージをスキャン (${{ matrix.label }})"
