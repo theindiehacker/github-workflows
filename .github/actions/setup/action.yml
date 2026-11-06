@@ -1,0 +1,24 @@
+name: "ツールを導入"
+description: "GitHub release のアーカイブを SHA-256 を検証して展開し、ツールを /usr/local/bin に導入する"
+
+inputs:
+  tool:
+    description: "導入するツール (actionlint / bun / ghalint / gitleaks / shellcheck / zizmor)"
+    required: true
+  version:
+    description: "ツールの GitHub release のタグ名 (v1.7.12 / bun-v1.4.3 など)"
+    required: true
+  sha256:
+    description: "linux x86_64 のアーカイブの SHA-256"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: "Setup"
+      shell: bash
+      env:
+        TOOL: ${{ inputs.tool }}
+        VERSION: ${{ inputs.version }}
+        SHA256: ${{ inputs.sha256 }}
+      run: bash "${GITHUB_ACTION_PATH}/install.sh"

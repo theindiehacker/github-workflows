@@ -1,13 +1,7 @@
 name: "zizmor で GitHub Actions の設定をスキャン"
-description: "インライン ignore コメントを禁止し、zizmor を SHA-256 を検証して導入して、severity HIGH 以上の検出で失敗する"
+description: "インライン ignore コメントを禁止し、導入済みの zizmor で、severity HIGH 以上の検出で失敗する"
 
 inputs:
-  version:
-    description: "zizmor の GitHub release のタグ名 (v1.31.1 など)"
-    required: true
-  sha256:
-    description: "x86_64 linux のアーカイブの SHA-256"
-    required: true
   scan-all:
     description: "true なら repo 全体をスキャンする（.github/zizmor.yml を変更したとき）"
     required: true
@@ -24,8 +18,6 @@ runs:
     - name: "zizmor スキャン"
       shell: bash
       env:
-        VERSION: ${{ inputs.version }}
-        SHA256: ${{ inputs.sha256 }}
         SCAN_ALL: ${{ inputs.scan-all }}
         TARGETS: ${{ inputs.targets }}
         GH_TOKEN: ${{ inputs.github-token }}

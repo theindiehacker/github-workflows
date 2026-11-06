@@ -3,10 +3,10 @@ description: "uv（pyproject.toml と uv.lock）で依存を管理している�
 
 inputs:
   pyprojects:
-    description: "python-targets の出力 pyprojects"
+    description: "detect の出力 python_pyprojects"
     required: true
   importlinters:
-    description: "python-targets の出力 importlinters"
+    description: "detect の出力 python_importlinters"
     required: true
 
 runs:
@@ -17,4 +17,4 @@ runs:
       env:
         PYPROJECTS: ${{ inputs.pyprojects }}
         IMPORTLINTERS: ${{ inputs.importlinters }}
-      run: bash "${GITHUB_ACTION_PATH}/python-rule.sh"
+      run: python3 -I -u "${GITHUB_ACTION_PATH}/python_rule.py"

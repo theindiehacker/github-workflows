@@ -11,7 +11,7 @@ inputs:
     description: "検査するプロジェクトのディレクトリ"
     required: true
   nested:
-    description: "python-targets の出力 nested"
+    description: "detect の出力 python_nested"
     required: true
 
 runs:
@@ -26,4 +26,4 @@ runs:
         NESTED: ${{ inputs.nested }}
         # 版の更新の確認（毎回の PyPI への問い合わせと警告）をしない。版は Renovate が上げる
         PYRIGHT_PYTHON_IGNORE_WARNINGS: "1"
-      run: bash "${GITHUB_ACTION_PATH}/pyright.sh"
+      run: python3 -I -u "${GITHUB_ACTION_PATH}/pyright_check.py"

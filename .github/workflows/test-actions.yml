@@ -1,0 +1,45 @@
+name: "🧪 action のテスト"
+
+# .github/actions の Python スクリプトの単体テスト（pytest）を実行する。
+# テストは各 action のディレクトリに test_*.py として置き、共通の fixture は .github/actions/conftest.py に置く
+on:
+  pull_request:
+    paths:
+      - ".github/actions/**"
+      - ".github/workflows/test-actions.yml"
+
+permissions: {}
+
+# 同じ PR で新しい push があれば、古い run をキャンセルする
+concurrency:
+  group: test-actions-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  # renovate: datasource=pypi depName=uv
+  UV_VERSION: "0.13.4"
+  # renovate: datasource=pypi depName=pytest
+  PYTEST_VERSION: "9.2.0"
+
+jobs:
+  pytest:
+    name: "pytest"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: "Install uv"
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+
+      # スクリプトはランナーの python3 で動くため、テストも同じ python3 で動かす（-p no:cacheprovider: .pytest_cache を作らない）
+      - name: "pytest"
+        run: uvx --python python3 --from "pytest==${PYTEST_VERSION}" pytest -p no:cacheprovider .github/actions

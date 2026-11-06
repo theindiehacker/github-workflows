@@ -2,7 +2,7 @@
 # プロジェクト（カレントディレクトリ）に割り当てられた import-linter の設定を、プロジェクトの環境で検査する
 set -euo pipefail
 
-# python-targets が自分に割り当てた設定だけを検査する（設定はプロジェクト直下とは限らない）
+# detect が自分に割り当てた設定だけを検査する（設定はプロジェクト直下とは限らない）
 configs=$(mktemp)
 jq -j --arg project "${PROJECT}" '.[] | select(.project == $project) | .rel, "\u0000"' <<< "${IMPORTLINTERS}" > "${configs}"
 if [ ! -s "${configs}" ]; then

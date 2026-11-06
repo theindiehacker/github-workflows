@@ -1,0 +1,9 @@
+# .github/actions の Python スクリプトの ruff の設定（既定のルールはそのまま使い、外すものだけを書く）
+
+# 既定の 88 桁では折り返しが多く縦に長くなるため、広げる
+line-length = 120
+
+[lint.per-file-ignores]
+# subprocess を呼ぶのは _lib/gha.py だけにする。引数はリストで渡しシェルを通さないため、
+# style.yml の ruff security（--select S）の S603（信頼できない入力の実行）は、ここだけ外す
+"_lib/gha.py" = ["S603"]

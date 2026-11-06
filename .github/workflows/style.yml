@@ -47,15 +47,15 @@ jobs:
       contents: read
       pull-requests: read  # paths-filter の変更ファイル一覧取得に必要
     outputs:
-      terraform: ${{ steps.filter.outputs.terraform }}
-      python_projects: ${{ steps.python.outputs.projects || '[]' }}
-      python_nested: ${{ steps.python.outputs.nested || '{}' }}
-      python_importlinters: ${{ steps.python.outputs.importlinters || '[]' }}
-      typescript_roots: ${{ steps.typescript.outputs.roots || '[]' }}
-      typescript_tsconfigs: ${{ steps.typescript.outputs.tsconfigs || '[]' }}
-      typescript_nextjs: ${{ steps.typescript.outputs.nextjs || '[]' }}
-      bundle_size_frontends: ${{ steps.bundle-size.outputs.frontends }}
-      bundle_size_targets: ${{ steps.bundle-size.outputs.targets || '[]' }}
+      python_projects: ${{ steps.detect.outputs.python_projects || '[]' }}
+      python_nested: ${{ steps.detect.outputs.python_nested || '{}' }}
+      python_importlinters: ${{ steps.detect.outputs.python_importlinters || '[]' }}
+      typescript_roots: ${{ steps.detect.outputs.typescript_roots || '[]' }}
+      typescript_tsconfigs: ${{ steps.detect.outputs.typescript_tsconfigs || '[]' }}
+      typescript_nextjs: ${{ steps.detect.outputs.typescript_nextjs || '[]' }}
+      bundle_size_frontends: ${{ steps.detect.outputs.bundle_size_frontends }}
+      bundle_size_targets: ${{ steps.detect.outputs.bundle_size_targets || '[]' }}
+      terraform_dirs: ${{ steps.detect.outputs.terraform_dirs || '[]' }}
     steps:
       - name: "検査対象を判定"
         id: filter
@@ -141,47 +141,62 @@ jobs:
           # バンドルサイズの計測対象の判定が、マージコミットの親（マージ先）との差分を git diff で調べる
           fetch-depth: 2
 
-      # 判定も !cancelled() で動かし、1 つの判定の失敗でほかの検査の対象が決まらなくならないようにする
-
-      - name: "Python の検査対象を割り当てる"
-        id: python
-        if: ${{ !cancelled() && steps.filter.outputs.python == 'true' }}
-        uses: theindiehacker/github-workflows/.github/actions/python-targets@a7539182106264f76d6627b37d8eed62cc60cff2
-
-      - name: "TypeScript の検査対象を収集"
-        id: typescript
-        if: ${{ !cancelled() && steps.filter.outputs.typescript == 'true' }}
-        uses: theindiehacker/github-workflows/.github/actions/typescript-targets@a7539182106264f76d6627b37d8eed62cc60cff2
-
-      - name: "バンドルサイズの計測対象を判定"
-        id: bundle-size
+      # 検出も !cancelled() で動かす（1 つの種類が失敗しても、残りの種類は action が出力する）
+      - name: "検査対象を検出"
+        id: detect
         if: ${{ !cancelled() }}
-        uses: theindiehacker/github-workflows/.github/actions/bundle-size-targets@a7539182106264f76d6627b37d8eed62cc60cff2
+        uses: theindiehacker/github-workflows/.github/actions/detect@c12ed731af542d01b685a9efc3f0ac850226ca04
+        with:
+          python: ${{ steps.filter.outputs.python }}
+          typescript: ${{ steps.filter.outputs.typescript }}
+          terraform: ${{ steps.filter.outputs.terraform }}
 
-      # 以降の各ツールは !cancelled() で暗黙の success() を外し、前のツールが失敗しても全ツールの結果を 1 run で出す
+      # 以降の各ツールは !cancelled() で暗黙の success() を外し、前のツールが失敗しても全ツールの結果を 1 run で出す。
+      # 検査の step は、対応する Setup の step が成功したかだけを見る（条件を 1 か所にし、導入に失敗したまま
+      # runner に元からある別の版で検査したり、command not found で本当の原因が埋もれたりしないようにする）
 
-      - name: "🧹 actionlint"
+      - name: "Setup actionlint"
+        id: setup-actionlint
         if: ${{ !cancelled() && steps.filter.outputs.actionlint == 'true' }}
         timeout-minutes: 5
-        uses: theindiehacker/github-workflows/.github/actions/actionlint@a7539182106264f76d6627b37d8eed62cc60cff2
+        uses: theindiehacker/github-workflows/.github/actions/setup@dbb46dad5aa58ee1f012b982d6299ab277348d29
         with:
+          tool: actionlint
           # renovate: datasource=github-release-attachments depName=rhysd/actionlint
           version: v1.7.12
           sha256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
 
-      - name: "🐚 shellcheck"
+      - name: "🧹 actionlint"
+        if: ${{ !cancelled() && steps.setup-actionlint.outcome == 'success' }}
+        timeout-minutes: 5
+        shell: bash
+        # workflow command 形式で出力し、検出箇所を PR に annotation 表示する
+        run: |
+          # shellcheck disable=SC2016 # $err は actionlint のテンプレートの変数
+          actionlint -format $'{{range $err := .}}::error file={{$err.Filepath}},line={{$err.Line}},col={{$err.Column}}::{{$err.Message}}\n{{end}}'
+
+      - name: "Setup shellcheck"
+        id: setup-shellcheck
         if: ${{ !cancelled() && steps.filter.outputs.shellcheck == 'true' }}
         timeout-minutes: 5
-        uses: theindiehacker/github-workflows/.github/actions/shellcheck@a7539182106264f76d6627b37d8eed62cc60cff2
+        uses: theindiehacker/github-workflows/.github/actions/setup@dbb46dad5aa58ee1f012b982d6299ab277348d29
         with:
+          tool: shellcheck
           # renovate: datasource=github-release-attachments depName=koalaman/shellcheck
           version: v0.11.0
           sha256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+
+      - name: "🐚 shellcheck"
+        if: ${{ !cancelled() && steps.setup-shellcheck.outcome == 'success' }}
+        timeout-minutes: 5
+        uses: theindiehacker/github-workflows/.github/actions/shellcheck@dbb46dad5aa58ee1f012b982d6299ab277348d29
+        with:
           files: ${{ steps.filter.outputs.shellcheck_files }}
 
       # 版は対象 repo の宣言を読まず中央で 1 つに固定する（terraform job も同じ値を使う）。
       # action は HashiCorp の SHA256SUMS の署名を検証してから導入する
       - name: "Setup terraform"
+        id: setup-terraform
         if: ${{ !cancelled() && steps.filter.outputs.terraform_fmt == 'true' }}
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4.0.1
         with: &setup-terraform
@@ -189,14 +204,16 @@ jobs:
           terraform_wrapper: false
 
       - name: "🏗️ terraform fmt"
-        if: ${{ !cancelled() && steps.filter.outputs.terraform_fmt == 'true' }}
+        if: ${{ !cancelled() && steps.setup-terraform.outcome == 'success' }}
         timeout-minutes: 5
-        uses: theindiehacker/github-workflows/.github/actions/terraform-fmt@a7539182106264f76d6627b37d8eed62cc60cff2
+        uses: theindiehacker/github-workflows/.github/actions/terraform@c12ed731af542d01b685a9efc3f0ac850226ca04
         with:
-          files: ${{ steps.filter.outputs.terraform_fmt_files }}
+          command: fmt
+          paths: ${{ steps.filter.outputs.terraform_fmt_files }}
 
       # checksums は release の zip の SHA-256。action がダウンロード後に検証する
       - name: "Setup tflint"
+        id: setup-tflint
         if: ${{ !cancelled() && steps.filter.outputs.tflint == 'true' }}
         uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337  # v6.3.2
         with:
@@ -205,7 +222,7 @@ jobs:
           checksums: cca9d13e2e1d7a2c627af60ff899a3c9b74212899416aeb96ec764d2ef954537
 
       - name: "🏗️ tflint"
-        if: ${{ !cancelled() && steps.filter.outputs.tflint == 'true' }}
+        if: ${{ !cancelled() && steps.setup-tflint.outcome == 'success' }}
         timeout-minutes: 10
         uses: theindiehacker/github-workflows/.github/actions/tflint@a7539182106264f76d6627b37d8eed62cc60cff2
         with:
@@ -235,12 +252,12 @@ jobs:
             }
 
       - name: "📜 Python の規約を検査"
-        if: ${{ !cancelled() && steps.python.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.detect.outputs.python_pyprojects != '' }}
         timeout-minutes: 5
-        uses: theindiehacker/github-workflows/.github/actions/python-rule@a7539182106264f76d6627b37d8eed62cc60cff2
+        uses: theindiehacker/github-workflows/.github/actions/python-rule@c12ed731af542d01b685a9efc3f0ac850226ca04
         with:
-          pyprojects: ${{ steps.python.outputs.pyprojects }}
-          importlinters: ${{ steps.python.outputs.importlinters }}
+          pyprojects: ${{ steps.detect.outputs.python_pyprojects }}
+          importlinters: ${{ steps.detect.outputs.python_importlinters }}
 
       - name: "✏️ ruff check"
         id: ruff
@@ -267,12 +284,14 @@ jobs:
         run: ruff check --no-fix --output-format=github --select S --ignore S101
 
   # Terraform の validate / test を行う（init が要るため lint とは分ける）。
-  # terraform init / test は PR に書かれた provider・module・data source を実行する
+  # terraform init / test は PR に書かれた provider・module・data source を実行する。
+  # 変更があったディレクトリではなく repo 全体を検査する（examples/ はモジュールを相対パスで呼ぶため、
+  # モジュールだけを変えた PR で examples が壊れても検知できるようにする）
   terraform:
     name: "Terraform を検査"
     needs: lint
     # lint で違反が出ても、同じ run で結果を出す
-    if: ${{ !cancelled() && needs.lint.outputs.terraform == 'true' }}
+    if: ${{ !cancelled() && needs.lint.outputs.terraform_dirs != '[]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -288,20 +307,12 @@ jobs:
         with:
           persist-credentials: false
 
-      # 変更があったディレクトリではなく repo 全体を検査する（examples/ はモジュールを相対パスで呼ぶため、
-      # モジュールだけを変えた PR で examples が壊れても検知できるようにする）
-      - name: "検査対象を収集"
-        id: dirs
-        uses: theindiehacker/github-workflows/.github/actions/terraform-dirs@a7539182106264f76d6627b37d8eed62cc60cff2
-
       - name: "Setup terraform"
-        if: steps.dirs.outputs.dirs != '[]'
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4.0.1
         with: *setup-terraform
 
       # provider は lock ファイルの checksum と一致したものだけが使われるため、キャッシュの中身は init 時に検証される
       - name: "provider のキャッシュ"
-        if: steps.dirs.outputs.dirs != '[]'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: ${{ runner.temp }}/terraform-plugin-cache
@@ -313,20 +324,19 @@ jobs:
       # fork からの PR では取得できないため、失敗しても続ける（registry を使わない repo には影響しない）
       - name: "registry.fastship.jp のトークンを取得"
         id: registry
-        if: steps.dirs.outputs.dirs != '[]'
         continue-on-error: true
         uses: theindiehacker/registry-fastship-action@84b7ba2adebf7524343ee48a7540a66ebaeb1a13  # v1.0.0
 
       - name: "terraform init"
         id: init
-        if: steps.dirs.outputs.dirs != '[]'
-        uses: theindiehacker/github-workflows/.github/actions/terraform-init@a7539182106264f76d6627b37d8eed62cc60cff2
+        uses: theindiehacker/github-workflows/.github/actions/terraform@c12ed731af542d01b685a9efc3f0ac850226ca04
         env:
+          TF_PLUGIN_CACHE_DIR: ${{ runner.temp }}/terraform-plugin-cache
           # terraform はこのホストへのリクエストにだけトークンを付ける。取得できなかったときは空になり、registry を使わない repo には影響しない
           TF_TOKEN_registry_fastship_jp: ${{ steps.registry.outputs.token }}
         with:
-          dirs: ${{ steps.dirs.outputs.dirs }}
-          plugin-cache-dir: ${{ runner.temp }}/terraform-plugin-cache
+          command: init
+          paths: ${{ needs.lint.outputs.terraform_dirs }}
 
       - name: "terraform validate"
         # init が失敗しても、init できたディレクトリは validate する
@@ -341,11 +351,12 @@ jobs:
       - name: "terraform test"
         # init / validate が失敗しても、init できたディレクトリのテストは実行する
         if: ${{ !cancelled() && steps.init.outcome != 'skipped' }}
-        uses: theindiehacker/github-workflows/.github/actions/terraform-test@a7539182106264f76d6627b37d8eed62cc60cff2
+        uses: theindiehacker/github-workflows/.github/actions/terraform@c12ed731af542d01b685a9efc3f0ac850226ca04
         env:
           TF_PLUGIN_CACHE_DIR: ${{ runner.temp }}/terraform-plugin-cache
         with:
-          dirs: ${{ steps.init.outputs.initialized || '[]' }}
+          command: test
+          paths: ${{ steps.init.outputs.initialized || '[]' }}
 
   python:
     name: "🚧 型・依存関係を検査 (${{ matrix.project }})"
@@ -400,7 +411,7 @@ jobs:
 
       - name: "🧱 Pyright - 型チェック"
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
-        uses: theindiehacker/github-workflows/.github/actions/pyright@a7539182106264f76d6627b37d8eed62cc60cff2
+        uses: theindiehacker/github-workflows/.github/actions/pyright@c12ed731af542d01b685a9efc3f0ac850226ca04
         with:
           version: ${{ env.PYRIGHT_VERSION }}
           project: ${{ matrix.project }}
@@ -440,9 +451,10 @@ jobs:
           persist-credentials: false
 
       # bun 本体は対象 repo の指定ではなく中央で固定する（bundle-size-measure も同じ値を使う）
-      - name: "Install bun"
-        uses: theindiehacker/github-workflows/.github/actions/install-bun@a7539182106264f76d6627b37d8eed62cc60cff2
+      - name: "Setup bun"
+        uses: theindiehacker/github-workflows/.github/actions/setup@dbb46dad5aa58ee1f012b982d6299ab277348d29
         with: &bun
+          tool: bun
           # renovate: datasource=github-release-attachments depName=oven-sh/bun
           version: bun-v1.4.3
           sha256: 3e730528d89775f03f87f05c06787c4df4099d0a37f3f252e7b829cb23816e18
@@ -528,9 +540,9 @@ jobs:
           git branch "${GITHUB_BASE_REF}" HEAD^1
           git remote remove origin
 
-      - name: "Install bun"
+      - name: "Setup bun"
         timeout-minutes: 5
-        uses: theindiehacker/github-workflows/.github/actions/install-bun@a7539182106264f76d6627b37d8eed62cc60cff2
+        uses: theindiehacker/github-workflows/.github/actions/setup@dbb46dad5aa58ee1f012b982d6299ab277348d29
         with: *bun
 
       # トークンは read のみのため、action による PR へのコメントは失敗する（ログのエラーは想定どおり）。

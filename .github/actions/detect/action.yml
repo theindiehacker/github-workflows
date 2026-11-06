@@ -1,0 +1,67 @@
+name: "検査対象を検出"
+description: >-
+  repo のファイルから検査対象を規約で検出し、JSON で出す。
+  python / typescript / terraform は入力が true のときだけ検出する（出力は空のまま）。バンドルサイズは常に検出する（checkout は fetch-depth: 2 にしておく）。
+  1 つの種類が失敗しても残りは出力し、最後に失敗を返す
+
+inputs:
+  python:
+    description: "true なら python_* を出す"
+    required: false
+    default: "false"
+  typescript:
+    description: "true なら typescript_* を出す"
+    required: false
+    default: "false"
+  terraform:
+    description: "true なら terraform_dirs を出す"
+    required: false
+    default: "false"
+
+outputs:
+  python_projects:
+    description: "uv.lock のあるディレクトリの JSON 配列（例: [\".\", \"backend\"]）"
+    value: ${{ steps.detect.outputs.python_projects }}
+  python_nested:
+    description: >-
+      プロジェクトごとの、別の uv.lock を持つ入れ子のプロジェクト（そのプロジェクトからの相対パス）の JSON オブジェクト
+      （例: {".": ["backend"], "backend": []}）
+    value: ${{ steps.detect.outputs.python_nested }}
+  python_pyprojects:
+    description: >-
+      pyproject.toml を担当プロジェクト（project）とそこからの相対パス（rel）に割り当てた JSON 配列。
+      project が空なら、どの uv.lock の配下にも無く検査できない
+    value: ${{ steps.detect.outputs.python_pyprojects }}
+  python_importlinters:
+    description: "import-linter の設定を python_pyprojects と同じ形で割り当てた JSON 配列"
+    value: ${{ steps.detect.outputs.python_importlinters }}
+  typescript_roots:
+    description: "導入単位（祖先に package.json を持たない最上位の package.json のディレクトリ）の JSON 配列"
+    value: ${{ steps.detect.outputs.typescript_roots }}
+  typescript_tsconfigs:
+    description: "型チェック単位（tsconfig.json のあるディレクトリ）の JSON 配列"
+    value: ${{ steps.detect.outputs.typescript_tsconfigs }}
+  typescript_nextjs:
+    description: "型チェック単位のうち、package.json の依存に next を持つディレクトリの JSON 配列"
+    value: ${{ steps.detect.outputs.typescript_nextjs }}
+  bundle_size_frontends:
+    description: "フロントエンドが 1 つでもあれば true（前回のコメントを書き換えるかの判定に使う）"
+    value: ${{ steps.detect.outputs.bundle_size_frontends }}
+  bundle_size_targets:
+    description: "バンドルサイズの計測対象（dir / pattern / changed / key）の JSON 配列"
+    value: ${{ steps.detect.outputs.bundle_size_targets }}
+  terraform_dirs:
+    description: "git 管理下の *.tf / *.tf.json があるディレクトリの JSON 配列（.terraform の配下は除く）"
+    value: ${{ steps.detect.outputs.terraform_dirs }}
+
+runs:
+  using: composite
+  steps:
+    - name: "検査対象を検出"
+      id: detect
+      shell: bash
+      env:
+        PYTHON: ${{ inputs.python }}
+        TYPESCRIPT: ${{ inputs.typescript }}
+        TERRAFORM: ${{ inputs.terraform }}
+      run: python3 -I -u "${GITHUB_ACTION_PATH}/detect.py"
