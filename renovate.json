@@ -63,6 +63,11 @@
   ],
   "packageRules": [
     {
+      "description": "git-refs はリリースの日時を返さず、既定（timestamp-required）では minimumReleaseAge を満たさないまま更新が出ないため、日時の無い更新も出す（PR のレビューで確かめてから上げる）",
+      "matchDatasources": ["git-refs"],
+      "minimumReleaseAgeBehaviour": "timestamp-optional"
+    },
+    {
       "description": "Bun のリリースタグは bun-v プレフィックス付きで semver として解釈できないため、regex versioning でバージョンを読み取る（canary 等の非リリースタグは除外される）",
       "matchPackageNames": ["oven-sh/bun"],
       "versioning": "regex:^bun-v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$"

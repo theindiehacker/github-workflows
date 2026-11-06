@@ -20,12 +20,16 @@ runs:
       run: |
         set -euo pipefail
         src="$RUNNER_TEMP/security-audit-skill"
-        git init -q "$src"
-        git -C "$src" fetch -q --depth 1 https://github.com/cloudflare/security-audit-skill.git "$SKILL_REF"
-        git -C "$src" checkout -q FETCH_HEAD
         skill_dir="$HOME/.claude/skills/security-audit"
         out_dir="$HOME/security-audit-skill"
         mkdir -p "$(dirname "$skill_dir")" "$out_dir"
-        rm -rf "$skill_dir"
-        cp -R "$src/skills/security-audit" "$skill_dir"
         echo "out_dir=$out_dir" >> "$GITHUB_OUTPUT"
+        git init -q "$src"
+        # 取れなくても @claude の応答は止めない (監査を頼まれたときだけ要るため)
+        if git -C "$src" fetch -q --depth 1 https://github.com/cloudflare/security-audit-skill.git "$SKILL_REF" &&
+          git -C "$src" checkout -q FETCH_HEAD; then
+          rm -rf "$skill_dir"
+          cp -R "$src/skills/security-audit" "$skill_dir"
+        else
+          echo "::warning::セキュリティ監査の skill を取得できなかったため、入れずに続けます"
+        fi
