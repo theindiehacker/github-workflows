@@ -73,6 +73,31 @@ jobs:
           # false にしないこと。tag mode の action は checkout が残す認証で PR ブランチを fetch する (.github/ghalint.yml で除外)
           persist-credentials: true
 
+      # @claude で頼むセキュリティ監査用に、cloudflare/security-audit-skill を user スコープの skill として入れる (プラグインではないため plugins では入らない)。
+      # write 権限のある Claude が読む第三者の指示のため、コミットを固定し、Renovate の PR でレビューしてから上げる
+      - name: "🛡️ セキュリティ監査の skill を入れる"
+        id: security-audit-skill
+        shell: bash
+        env:
+          # renovate: datasource=git-refs depName=https://github.com/cloudflare/security-audit-skill branch=main
+          SKILL_REF: c1c8a8c1471069fb0e188eeaff69b8e8db6564a8
+        run: |
+          set -euo pipefail
+          src="$RUNNER_TEMP/security-audit-skill"
+          git init -q "$src"
+          git -C "$src" fetch -q --depth 1 https://github.com/cloudflare/security-audit-skill.git "$SKILL_REF"
+          git -C "$src" checkout -q FETCH_HEAD
+          skill_dir="$HOME/.claude/skills/security-audit"
+          # skill の既定の出力先。作業ディレクトリの外のため、claude_args の --add-dir で書き込みを許す
+          out_dir="$HOME/security-audit-skill"
+          mkdir -p "$(dirname "$skill_dir")" "$out_dir"
+          rm -rf "$skill_dir"
+          cp -R "$src/skills/security-audit" "$skill_dir"
+          {
+            echo "skill_dir=$skill_dir"
+            echo "out_dir=$out_dir"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Run Claude Code
         uses: anthropics/claude-code-action@db77d4d3c98f3f6380e7cd45ffba2342a3dbde3c  # v1.0.254
         env:
@@ -92,3 +117,5 @@ jobs:
             --model claude-opus-5-5
             --max-turns 200
             ${{ inputs.effort && format('--effort {0}', inputs.effort) }}
+            --add-dir ${{ steps.security-audit-skill.outputs.out_dir }}
+            --allowedTools "Skill(security-audit),Bash(node ${{ steps.security-audit-skill.outputs.skill_dir }}/validate-findings.cjs:*),Bash(node ${{ steps.security-audit-skill.outputs.skill_dir }}/validate-coverage-ledger.cjs:*)"
