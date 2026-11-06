@@ -57,6 +57,23 @@ run "必須ワークフローのルールセットは_bypass_できない" {
   }
 }
 
+run "リリースタグを作れるのは_GitHub_Actions_だけ" {
+  command = plan
+
+  assert {
+    condition     = github_organization_ruleset.release_tag_creation.rules[0].creation == true
+    error_message = "リリースタグの作成を禁止する"
+  }
+
+  assert {
+    condition = length(github_organization_ruleset.release_tag_creation.bypass_actors) == 1 && alltrue([
+      for actor in github_organization_ruleset.release_tag_creation.bypass_actors :
+      actor.actor_type == "Integration" && actor.actor_id == 200
+    ])
+    error_message = "bypass は GitHub Actions (Release ワークフローの GITHUB_TOKEN) だけにする"
+  }
+}
+
 run "Renovate_は_PR_のときだけ承認を_bypass_できる" {
   command = plan
 

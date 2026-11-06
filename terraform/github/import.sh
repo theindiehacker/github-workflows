@@ -48,6 +48,7 @@ import_ruleset github_organization_ruleset.security_scan '🛡️ 脆弱性・Ia
 import_ruleset github_organization_ruleset.style_check '✏️ スタイルチェック'
 import_ruleset github_organization_ruleset.sensitive_files '🚫 機密ファイルの push 禁止'
 import_ruleset github_organization_ruleset.release_tags '🔒 リリースタグの変更禁止'
+import_ruleset github_organization_ruleset.release_tag_creation '🏷️ リリースタグの作成を制限'
 
 import github_actions_organization_permissions.this "${owner}"
 import github_actions_organization_workflow_permissions.this "${owner}"

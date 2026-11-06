@@ -86,6 +86,7 @@ terraform -chdir=terraform/github apply
 | ✏️ スタイルチェック | 全 repo の default branch | `style.yml` の成功を必須にする |
 | 🚫 機密ファイルの push 禁止 | 全 repo | `.env`・秘密鍵・`*.tfstate` などの push を拒否する |
 | 🔒 リリースタグの変更禁止 | この repo の `v*` タグ | タグの更新・削除を禁止する（「5.」） |
+| 🏷️ リリースタグの作成を制限 | この repo の `v*` タグ | タグの作成を禁止する。bypass は GitHub Actions（Release ワークフローの `GITHUB_TOKEN`）だけ（「5.」） |
 
 > ⚠️ 承認者本人が作成した PR は自己承認できないため、「✅ PR の承認を必須化」の bypass に org 管理者を入れている。
 
@@ -195,11 +196,6 @@ git ls-remote https://github.com/theindiehacker/github-workflows 'refs/tags/v1.0
 
 セキュリティレビューは、コメント (`/security-review`) で頼んだときだけ動く。PR の作成時 (Draft は Ready にしたとき) にも動かすには、`security-review` job の `if` に `code-review` job と同じ `pull_request` の条件を足す (FastShip の `/dev:setup` が足す)。
 
-セキュリティ監査 (`security-audit` job) は、月 1 回 (毎月 1 日 9:17 JST) リポジトリ全体を Claude が監査し、PR のレビューでは見ない前からある問題を `security-audit` ラベルの Issue にする (重大度 HIGH・MEDIUM、1 回に最大 10 件)。
-- 手動では Actions → **🧠 Claude** → **Run workflow** で動かす
-- 指摘が公開されないよう、private / internal のリポジトリでだけ動く
-- 誤検知や許容するリスクは「Close as not planned」で閉じる。次回からは起票されない
-
 > 💡 本リポジトリは `github-workflows` → `devops` → `github-workflows` と改名した。git clone や API は旧名からリダイレクトされるが、`uses:` はリダイレクトされず、旧名の `uses: theindiehacker/devops/...` はワークフローの起動時点で失敗する。そのため `theindiehacker/github-workflows/...` に書き換える（旧名 `devops` でリポジトリを作り直すと参照先が乗っ取られるため、旧名は再利用しない）。ruleset はリポジトリ名ではなく ID で紐付くため、改名後の再設定は不要
 
 ---
@@ -223,7 +219,7 @@ git ls-remote https://github.com/theindiehacker/github-workflows 'refs/tags/v1.0
 - タグがまだ無い場合は、`bump` に関係なく `v1.0.0` になる
 - main の先頭にすでにタグが付いている場合は、何も作らずに失敗で終わる（新しい変更をマージしてから実行し直す）
 - `main` 以外のブランチを選んだ場合は job が skip される
-- タグは `GITHUB_TOKEN` で作るため、タグの作成は制限していない。write 権限を持つメンバーは、ワークフローの書き換えや直接の push でレビューを経ないコミットにもタグを付けられる（呼び出し側ではマイナー・パッチの更新が自動マージされる）。write 権限は信頼できるメンバーだけに付与する
+- タグを作れるのは GitHub Actions（`GITHUB_TOKEN`）だけで、直接の push や Claude App のトークンでは作れない（「🏷️ リリースタグの作成を制限」）。ただし write 権限を持つメンバーは、ワークフローを書き換えれば、レビューを経ないコミットにもタグを付けられる（呼び出し側ではマイナー・パッチの更新が自動マージされる）。write 権限は信頼できるメンバーだけに付与する
 - 実行は 1 回ずつ行う。実行中に続けて 2 回以上実行すると、待機中の実行は最後の 1 回に置き換えられる
 
 付けたタグは「🔒 リリースタグの変更禁止」（「2.」）で更新・削除できない。誤ったタグを付けた場合も付け替えず、修正を入れた次のバージョンを出す。
