@@ -196,11 +196,36 @@ git ls-remote https://github.com/theindiehacker/github-workflows 'refs/tags/v1.0
 
 セキュリティレビューは、コメント (`/security-review`) で頼んだときだけ動く。PR の作成時 (Draft は Ready にしたとき) にも動かすには、`security-review` job の `if` に `code-review` job と同じ `pull_request` の条件を足す (FastShip の `/dev:setup` が足す)。
 
-リポジトリ全体のセキュリティ監査 (PR のレビューでは見ない、前からある問題を探す) は、Issue に `@claude security-audit skill でリポジトリ全体を監査して` とコメントして頼む。`claude` job が [cloudflare/security-audit-skill](https://github.com/cloudflare/security-audit-skill) を使う。
-- 結果は Claude の返信コメントに出る。public のリポジトリでは指摘が公開されるため頼まない
-- レポート (REPORT.md など) は、Actions の実行の artifact (`security-audit`) にも残る (private / internal のリポジトリだけ)。途中で切れても、そこまでの出力を取り出せる
-- 60 分で切れたら、`quick で` と付けて頼み直す
-- Issue にしたい指摘は、同じ Issue で `@claude` に起票を頼む
+リポジトリ全体のセキュリティ監査 (PR のレビューでは見ない、前からある問題を探す) は、GitHub Actions ではなく Claude Code on the web の[ルーティン](https://claude.ai/code/routines)で、[cloudflare/security-audit-skill](https://github.com/cloudflare/security-audit-skill) を使って行う。時間で切れず、対象のコードをコンテナの中で動かして確かめられ、結果がセッションに残るため。
+
+1. https://claude.ai/code の入力欄の下の環境名 → **クラウド** → 環境の ⚙️ を開き、**セットアップスクリプト** に下を足して保存する。skill のコミットは固定している。上げるときは差分を読んでから SHA を書き換える
+
+   ```bash
+   {
+     src=$(mktemp -d) &&
+     git -C "$src" init -q &&
+     git -C "$src" fetch -q --depth 1 https://github.com/cloudflare/security-audit-skill.git c1c8a8c1471069fb0e188eeaff69b8e8db6564a8 &&
+     git -C "$src" checkout -q FETCH_HEAD &&
+     mkdir -p ~/.claude/skills &&
+     rm -rf ~/.claude/skills/security-audit &&
+     cp -R "$src/skills/security-audit" ~/.claude/skills/
+   } || echo "⚠️ security-audit skill を入れられませんでした" >&2
+   ```
+
+2. https://claude.ai/code/routines でルーティンを作る。リポジトリと 1. の環境を選び、スケジュールは月 1 回 (例: 毎月 1 日 9:17 JST)、プロンプトは下にする
+
+   ```text
+   security-audit skill で、このリポジトリ全体をフル監査して (profile は standard)。
+   終わったら、confirmed で severity が critical・high・medium の指摘を、それぞれ `security-audit` ラベルの Issue にする。
+   open の `security-audit` Issue と、not planned・duplicate で閉じた `security-audit` Issue と同じ指摘は起票しない。
+   completed で閉じた Issue と同じ指摘は、今もコードに残っているときだけ起票し、元の Issue に触れる。
+   リポジトリが public なら起票せず、結果はこのセッションにだけ残す。
+   ```
+
+3. 作ったら一度手動で実行し、セッションで監査が最後まで進み、Issue ができるかを確かめる
+
+- 誤検知や許容するリスクは「Close as not planned」で閉じる。次回からは起票されない
+- ルーティンは作った人の claude.ai アカウントに属し、その人の利用枠を使う。その人が抜けると止まるため、別の人が作り直す
 
 > 💡 本リポジトリは `github-workflows` → `devops` → `github-workflows` と改名した。git clone や API は旧名からリダイレクトされるが、`uses:` はリダイレクトされず、旧名の `uses: theindiehacker/devops/...` はワークフローの起動時点で失敗する。そのため `theindiehacker/github-workflows/...` に書き換える（旧名 `devops` でリポジトリを作り直すと参照先が乗っ取られるため、旧名は再利用しない）。ruleset はリポジトリ名ではなく ID で紐付くため、改名後の再設定は不要
 

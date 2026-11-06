@@ -1,6 +1,0 @@
-paths:
-  # actionlint (v1.7.12) は self-repository の書き方 (uses: $/...) に未対応で、ref が無いとエラーにするため除外する。
-  # 対応した版に上げたら消す
-  .github/workflows/*.yml:
-    ignore:
-      - 'specifying action "\$/[^"]+" in invalid format because ref is missing'

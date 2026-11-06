@@ -50,23 +50,9 @@
       "datasourceTemplate": "github-releases",
       "extractVersionTemplate": "^v(?<version>.+)$",
       "versioningTemplate": "semver"
-    },
-    {
-      "description": "リリースの無いリポジトリから取るもの（.github/actions/security-audit の security-audit-skill など）の <NAME>_REF を、branch= のブランチの最新のコミット SHA に更新する",
-      "customType": "regex",
-      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.yml$/", "/^\\.github/actions/[^/]+/action\\.yml$/"],
-      "matchStrings": [
-        "# renovate: datasource=git-refs depName=(?<depName>\\S+?) branch=(?<currentValue>\\S+)\\s+[A-Z0-9_]+_REF:\\s*\"?(?<currentDigest>[0-9a-f]{40})\"?"
-      ],
-      "datasourceTemplate": "git-refs"
     }
   ],
   "packageRules": [
-    {
-      "description": "git-refs はリリースの日時を返さず、既定（timestamp-required）では minimumReleaseAge を満たさないまま更新が出ないため、日時の無い更新も出す（PR のレビューで確かめてから上げる）",
-      "matchDatasources": ["git-refs"],
-      "minimumReleaseAgeBehaviour": "timestamp-optional"
-    },
     {
       "description": "Bun のリリースタグは bun-v プレフィックス付きで semver として解釈できないため、regex versioning でバージョンを読み取る（canary 等の非リリースタグは除外される）",
       "matchPackageNames": ["oven-sh/bun"],
