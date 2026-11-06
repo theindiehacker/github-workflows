@@ -198,7 +198,7 @@ git ls-remote https://github.com/theindiehacker/github-workflows 'refs/tags/v1.0
 
 リポジトリ全体のセキュリティ監査 (PR のレビューでは見ない、前からある問題を探す) は、Issue に `@claude security-audit skill でリポジトリ全体を監査して` とコメントして頼む。`claude` job が [cloudflare/security-audit-skill](https://github.com/cloudflare/security-audit-skill) を使う。
 - 結果は Claude の返信コメントに出る。public のリポジトリでは指摘が公開されるため頼まない
-- レポート (REPORT.md など) は、Actions の実行の artifact (`security-audit`) にも残る。途中で切れても、そこまでの出力を取り出せる
+- レポート (REPORT.md など) は、Actions の実行の artifact (`security-audit`) にも残る (private / internal のリポジトリだけ)。途中で切れても、そこまでの出力を取り出せる
 - 60 分で切れたら、`quick で` と付けて頼み直す
 - Issue にしたい指摘は、同じ Issue で `@claude` に起票を頼む
 

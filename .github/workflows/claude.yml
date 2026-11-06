@@ -100,9 +100,10 @@ jobs:
             --allowedTools "Skill(security-audit),Bash(node:*),Bash(npx:*),Bash(bun:*)"
 
       # 監査が途中で切れても (時間切れを含む)、skill の出力 (REPORT.md・findings.json など) を取り出せるよう残す。
-      # 監査を頼まれていなければ出力が無いため、何も残さない
+      # 監査を頼まれていなければ出力が無いため、何も残さない。
+      # public のリポジトリでは artifact を誰でも取れるため残さない (private は internal も含む)
       - name: "📦 セキュリティ監査の結果を残す"
-        if: always() && steps.security-audit.outputs.out_dir != ''
+        if: always() && steps.security-audit.outputs.out_dir != '' && github.event.repository.private
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: security-audit
