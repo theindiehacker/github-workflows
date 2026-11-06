@@ -52,23 +52,13 @@
       "versioningTemplate": "semver"
     },
     {
-      "description": "リリースの無いリポジトリから取るもの（claude.yml の security-audit-skill など）の <NAME>_REF を、branch= のブランチの最新のコミット SHA に更新する",
+      "description": "リリースの無いリポジトリから取るもの（.github/actions/security-audit の security-audit-skill など）の <NAME>_REF を、branch= のブランチの最新のコミット SHA に更新する",
       "customType": "regex",
-      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.yml$/"],
+      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.yml$/", "/^\\.github/actions/[^/]+/action\\.yml$/"],
       "matchStrings": [
         "# renovate: datasource=git-refs depName=(?<depName>\\S+?) branch=(?<currentValue>\\S+)\\s+[A-Z0-9_]+_REF:\\s*\"?(?<currentDigest>[0-9a-f]{40})\"?"
       ],
       "datasourceTemplate": "git-refs"
-    },
-    {
-      "description": "npx で動かす CLI（claude.yml の skills など）の <NAME>_VERSION を npm の最新版に更新する（datasource=npm のブロックのみ対象）",
-      "customType": "regex",
-      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.yml$/"],
-      "matchStrings": [
-        "# renovate: datasource=npm depName=(?<depName>[^\\s]+?)\\s+[A-Z0-9_]+_VERSION:\\s*\"?(?<currentValue>[^\\s\"]+)\"?"
-      ],
-      "datasourceTemplate": "npm",
-      "versioningTemplate": "npm"
     }
   ],
   "packageRules": [

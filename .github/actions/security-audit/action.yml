@@ -1,0 +1,31 @@
+name: "セキュリティ監査の skill を入れる"
+description: "cloudflare/security-audit-skill を ~/.claude/skills に入れ、監査の出力先を作る。プラグインではないため、claude-code-action の plugins では入らない"
+
+outputs:
+  out_dir:
+    description: "監査の出力先。作業ディレクトリの外のため、claude_args の --add-dir に渡して書き込みを許す"
+    value: ${{ steps.install.outputs.out_dir }}
+
+runs:
+  using: composite
+  steps:
+    # write 権限のある Claude が読む第三者の指示のため、コミットを固定し、Renovate の PR でレビューしてから上げる。
+    # npx skills add は依存 (tar・yaml) の版が固定されず、この job で第三者のコードが動くため使わない
+    - name: "skill を入れる"
+      id: install
+      shell: bash
+      env:
+        # renovate: datasource=git-refs depName=https://github.com/cloudflare/security-audit-skill branch=main
+        SKILL_REF: c1c8a8c1471069fb0e188eeaff69b8e8db6564a8
+      run: |
+        set -euo pipefail
+        src="$RUNNER_TEMP/security-audit-skill"
+        git init -q "$src"
+        git -C "$src" fetch -q --depth 1 https://github.com/cloudflare/security-audit-skill.git "$SKILL_REF"
+        git -C "$src" checkout -q FETCH_HEAD
+        skill_dir="$HOME/.claude/skills/security-audit"
+        out_dir="$HOME/security-audit-skill"
+        mkdir -p "$(dirname "$skill_dir")" "$out_dir"
+        rm -rf "$skill_dir"
+        cp -R "$src/skills/security-audit" "$skill_dir"
+        echo "out_dir=$out_dir" >> "$GITHUB_OUTPUT"
