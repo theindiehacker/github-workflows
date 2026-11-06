@@ -89,7 +89,8 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           show_full_output: false
           # Claude が実行できるコマンドは、action の既定 (git add / commit / rm と push) と、--allowedTools の node・npx・bun。
-          # node・npx・bun は任意のコードを実行でき、プロンプトインジェクションで書き込みトークンを外に送られうる (許容したリスク)
+          # node・npx・bun は任意のコードを実行できるが、許可する。起動できるのは org の信頼できるメンバーだけ (job の if)。
+          # 書き込みトークンが漏れても、main へのマージは ruleset で 1 名以上の approve が要るため、できない
           claude_args: |
             --model claude-opus-5-5
             --max-turns 200
