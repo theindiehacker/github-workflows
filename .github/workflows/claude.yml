@@ -73,24 +73,10 @@ jobs:
           # false にしないこと。tag mode の action は checkout が残す認証で PR ブランチを fetch する (.github/ghalint.yml で除外)
           persist-credentials: true
 
-      # @claude で頼むセキュリティ監査用に、cloudflare/security-audit-skill を ~/.claude/skills に入れる (プラグインではないため plugins では入らない)。
-      # write 権限のある Claude が読む第三者の指示のため、CLI の版と skill のコミットを固定し、Renovate の PR でレビューしてから上げる
+      # @claude で頼むセキュリティ監査 (cloudflare/security-audit-skill) を入れる
       - name: "🛡️ セキュリティ監査の skill を入れる"
-        id: security-audit-skill
-        shell: bash
-        env:
-          DISABLE_TELEMETRY: "1"
-          # renovate: datasource=npm depName=skills
-          SKILLS_VERSION: 1.7.6
-          # renovate: datasource=git-refs depName=https://github.com/cloudflare/security-audit-skill branch=main
-          SKILL_REF: c1c8a8c1471069fb0e188eeaff69b8e8db6564a8
-        run: |
-          set -euo pipefail
-          npx --yes "skills@${SKILLS_VERSION}" add "https://github.com/cloudflare/security-audit-skill/tree/${SKILL_REF}/skills/security-audit" \
-            --global --agent claude-code --copy --yes
-          # skill の出力先。作業ディレクトリの外のため、claude_args の --add-dir で書き込みを許す
-          mkdir -p "$HOME/security-audit-skill"
-          echo "home=$HOME" >> "$GITHUB_OUTPUT"
+        id: security-audit
+        uses: theindiehacker/github-workflows/.github/actions/security-audit@764afe95834308b31202b5740cc059567d6afc2b
 
       - name: Run Claude Code
         uses: anthropics/claude-code-action@db77d4d3c98f3f6380e7cd45ffba2342a3dbde3c  # v1.0.254
@@ -102,11 +88,11 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           show_full_output: false
-          # Claude が実行できるコマンドは、action の既定 (git add / commit / rm と push) と、下の --allowedTools にある監査の skill のバリデータ 2 本だけ。
-          # node・npx・bun などを丸ごと許可しないこと。任意のコードを実行でき、プロンプトインジェクションで checkout が .git/config に残す書き込みトークンを外に送れる
+          # Claude が実行できるコマンドは、action の既定 (git add / commit / rm と push) と、--allowedTools の node・npx・bun。
+          # node・npx・bun は任意のコードを実行でき、プロンプトインジェクションで書き込みトークンを外に送られうる (許容したリスク)
           claude_args: |
             --model claude-opus-5-5
             --max-turns 200
             ${{ inputs.effort && format('--effort {0}', inputs.effort) }}
-            --add-dir ${{ steps.security-audit-skill.outputs.home }}/security-audit-skill
-            --allowedTools "Skill(security-audit),Bash(node ${{ steps.security-audit-skill.outputs.home }}/.claude/skills/security-audit/validate-findings.cjs:*),Bash(node ${{ steps.security-audit-skill.outputs.home }}/.claude/skills/security-audit/validate-coverage-ledger.cjs:*)"
+            --add-dir ${{ steps.security-audit.outputs.out_dir }}
+            --allowedTools "Skill(security-audit),Bash(node:*),Bash(npx:*),Bash(bun:*)"
