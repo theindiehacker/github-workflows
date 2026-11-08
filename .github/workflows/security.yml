@@ -119,8 +119,8 @@ jobs:
         uses: $/.github/actions/ghalint
         with:
           # renovate: datasource=github-release-attachments depName=suzuki-shunsuke/ghalint
-          version: v1.5.6
-          sha256: 98ee0e3330de7286f470d1e89c03ff7ce70d7a5998ba0f15969c400447be579c
+          version: v1.6.0
+          sha256: eda1af79c1a4a31c2de5831cd1333ad582fa6fa72015f8e9c1c4525d550c1d35
 
       - name: "🛡️ zizmor"
         if: ${{ !cancelled() && (steps.filter.outputs.zizmor_config == 'true' || steps.filter.outputs.zizmor_targets == 'true') }}
@@ -141,8 +141,8 @@ jobs:
         uses: $/.github/actions/semgrep
         with:
           # renovate: datasource=docker depName=semgrep/semgrep
-          version: 1.182.0
-          digest: sha256:4a34048c04fef049f71665047f074cffb00cc3d89482f965a5cd151d589237af
+          version: 1.183.0
+          digest: sha256:2e45517a85e13a9cca14a2a00df6bb48affd66b8ebfae1b0991cd57578362fb0
           baseline: ${{ github.event.pull_request.base.sha }}
 
       - name: "Trivy の検知する severity / 抑制ファイルを決定"
