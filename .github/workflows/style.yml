@@ -28,9 +28,9 @@ concurrency:
 env:
   # ツール版は対象 repo の宣言を読まず中央で固定する（2 桁の版が float に化けないよう引用符で囲む）
   # renovate: datasource=pypi depName=uv
-  UV_VERSION: "0.13.4"
+  UV_VERSION: "0.13.6"
   # renovate: datasource=pypi depName=ruff
-  RUFF_VERSION: "0.17.1"
+  RUFF_VERSION: "0.17.3"
   # renovate: datasource=pypi depName=pyright
   PYRIGHT_VERSION: "1.1.414"
   # renovate: datasource=pypi depName=import-linter
@@ -201,8 +201,8 @@ jobs:
         uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337  # v6.3.2
         with:
           # renovate: datasource=github-release-attachments depName=terraform-linters/tflint
-          tflint_version: v0.64.0
-          checksums: cca9d13e2e1d7a2c627af60ff899a3c9b74212899416aeb96ec764d2ef954537
+          tflint_version: v0.65.0
+          checksums: d4c545ed2e29d6338604b586f34f544f380f70f243aa72f7b484713835eaec61
 
       - name: "🏗️ tflint"
         if: ${{ !cancelled() && steps.filter.outputs.tflint == 'true' }}
@@ -224,13 +224,13 @@ jobs:
 
             plugin "google" {
               enabled = true
-              version = "0.40.0"
+              version = "0.41.0"
               source  = "github.com/terraform-linters/tflint-ruleset-google"
             }
 
             plugin "aws" {
               enabled = true
-              version = "0.49.0"
+              version = "0.50.0"
               source  = "github.com/terraform-linters/tflint-ruleset-aws"
             }
 
@@ -372,7 +372,7 @@ jobs:
 
       - name: "Install uv"
         id: uv
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
         with:
           version: ${{ env.UV_VERSION }}
           working-directory: ${{ matrix.project }}
@@ -444,8 +444,8 @@ jobs:
         uses: $/.github/actions/install-bun
         with: &bun
           # renovate: datasource=github-release-attachments depName=oven-sh/bun
-          version: bun-v1.4.3
-          sha256: 3e730528d89775f03f87f05c06787c4df4099d0a37f3f252e7b829cb23816e18
+          version: bun-v1.4.4
+          sha256: bf8ccbfb2b0b80159e0f9a6d15c55317add8077534dbc6130a3edb52fccb395c
 
       # bun install が失敗した場合のみ後続を skip する。biome / knip / tsc は互いに独立して実行するため、
       # 1 回の run で全ての違反が出揃う

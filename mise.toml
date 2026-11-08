@@ -1,8 +1,8 @@
 [tools]
-terraform = "1.16.6"
+terraform = "1.17.1"
 terraform-docs = "0.24.0"
 task = "3.54.0"
-tflint = "0.64.0"
+tflint = "0.65.0"
 gitleaks = "8.30.1"
 lefthook = "2.2.2"
 trivy = "0.73.0"
