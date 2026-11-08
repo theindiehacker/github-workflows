@@ -6,16 +6,6 @@ mock_provider "github" {
     }
   }
 
-  mock_data "github_organization_roles" {
-    defaults = {
-      roles = [
-        { role_id = 8132, name = "all_repo_read", base_role = "read", description = "", permissions = [], source = "Predefined" },
-        { role_id = 8134, name = "all_repo_write", base_role = "write", description = "", permissions = [], source = "Predefined" },
-        { role_id = 138, name = "security_manager", base_role = "read", description = "", permissions = [], source = "Predefined" },
-      ]
-    }
-  }
-
   mock_data "github_repository" {
     defaults = {
       repo_id = 100
@@ -67,6 +57,23 @@ run "必須ワークフローのルールセットは_bypass_できない" {
   }
 }
 
+run "リリースタグを作れるのは_GitHub_Actions_だけ" {
+  command = plan
+
+  assert {
+    condition     = github_organization_ruleset.release_tag_creation.rules[0].creation == true
+    error_message = "リリースタグの作成を禁止する"
+  }
+
+  assert {
+    condition = length(github_organization_ruleset.release_tag_creation.bypass_actors) == 1 && alltrue([
+      for actor in github_organization_ruleset.release_tag_creation.bypass_actors :
+      actor.actor_type == "Integration" && actor.actor_id == 200
+    ])
+    error_message = "bypass は GitHub Actions (Release ワークフローの GITHUB_TOKEN) だけにする"
+  }
+}
+
 run "Renovate_は_PR_のときだけ承認を_bypass_できる" {
   command = plan
 
@@ -76,23 +83,6 @@ run "Renovate_は_PR_のときだけ承認を_bypass_できる" {
       actor.bypass_mode == "pull_request" if actor.actor_type == "Integration"
     ])
     error_message = "Renovate の bypass は PR のときだけにする"
-  }
-
-  assert {
-    condition     = length([for actor in github_organization_ruleset.workflow_change_review.bypass_actors : actor if actor.actor_type == "Integration"]) == 0
-    error_message = "検知ワークフローの変更は、Renovate の PR でも security チームの承認を必須にする（乗っ取られた action の版が全 repo に広がるのを防ぐ）"
-  }
-}
-
-run "検知ワークフローとルールセットの定義の変更には_security_チームの承認が要る" {
-  command = plan
-
-  assert {
-    condition = alltrue([
-      for pattern in [".github/workflows/**", ".github/actions/**", "terraform/github/**"] :
-      contains(github_organization_ruleset.workflow_change_review.rules[0].pull_request[0].required_reviewers[0].file_patterns, pattern)
-    ])
-    error_message = "必須ワークフローの実体とルールセットの定義は、検知を弱められるため security チームの承認を必須にする"
   }
 }
 

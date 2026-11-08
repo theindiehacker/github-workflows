@@ -8,7 +8,6 @@ Organization の設定は Terraform（[`terraform/github/`](../terraform/github/
 | 設定 | 管理する場所 |
 |:--|:--|
 | ベース権限・リポジトリ作成・fork の禁止 | [`organization.tf`](../terraform/github/organization.tf) |
-| security チームとメンバー・Organization role | [`teams.tf`](../terraform/github/teams.tf) |
 | ルールセット（branch / push / tag） | [`rulesets.tf`](../terraform/github/rulesets.tf) |
 | 実行できる action の制限・`GITHUB_TOKEN` のデフォルト権限 | [`actions.tf`](../terraform/github/actions.tf) |
 | 二要素認証・組織シークレット・Claude GitHub App・Immutable releases | 手作業（「0.」「4.」「5.」） |
@@ -79,20 +78,17 @@ terraform -chdir=terraform/github apply
 ---
 ## 2. 📚 ルールセット
 
-security チーム（`teams.tf`）は、Gitleaks や Trivy などがセキュリティ検知をした時に対応するチーム。セキュリティの設定・検知ワークフローを変える PR は、このチームの承認がないとマージできない。
-
 | ルールセット | 対象 | 内容 |
 |:--|:--|:--|
 | 🚫 main への直接 push 禁止 | 全 repo の default branch | 削除・force push の禁止、PR の必須化 |
-| ✅ PR の承認を必須化 | 全 repo の default branch | 人間の承認 1 名以上。bypass は Renovate 用 GitHub App（`renovate-<org 名>`。PR のときだけ） |
+| ✅ PR の承認を必須化 | 全 repo の default branch | 人間の承認 1 名以上。bypass は Renovate 用 GitHub App（`renovate-<org 名>`。PR のときだけ）と org 管理者 |
 | 🛡️ 脆弱性・IaC 設定ミス検知 | 全 repo の default branch | `security.yml` の成功を必須にする |
-| ✔️ セキュリティ設定変更の承認必須化 | 全 repo の default branch | `.gitleaksignore` / `.trivyignore` などの変更に security チームの承認を必須にする |
-| 🛠️ 検知ワークフロー変更の承認必須化 | この repo の default branch | `.github/workflows/**`・`.github/actions/**`・`terraform/github/**` の変更に security チームの承認を必須にする。Renovate の PR も対象（bypass しない） |
 | ✏️ スタイルチェック | 全 repo の default branch | `style.yml` の成功を必須にする |
 | 🚫 機密ファイルの push 禁止 | 全 repo | `.env`・秘密鍵・`*.tfstate` などの push を拒否する |
 | 🔒 リリースタグの変更禁止 | この repo の `v*` タグ | タグの更新・削除を禁止する（「5.」） |
+| 🏷️ リリースタグの作成を制限 | この repo の `v*` タグ | タグの作成を禁止する。bypass は GitHub Actions（Release ワークフローの `GITHUB_TOKEN`）だけ（「5.」） |
 
-> ⚠️ 承認者本人が作成した PR は自己承認できない。security チームのメンバーが 1 人だけの間は、承認を必須にする 3 つのルールセットの bypass に org 管理者が入る（`teams.tf` の `security_members` から決まる）。
+> ⚠️ 承認者本人が作成した PR は自己承認できないため、「✅ PR の承認を必須化」の bypass に org 管理者を入れている。
 
 ### 🛡️ 脆弱性・IaC 設定ミス検知
 
@@ -104,7 +100,7 @@ security チーム（`teams.tf`）は、Gitleaks や Trivy などがセキュリ
 | ghalint | ワークフローのセキュリティポリシー（permissions 未設定・action の SHA 未固定など）。ワークフローを変更したときだけ |
 | zizmor | GitHub Actions の設定の脆弱性（severity HIGH 以上）。ワークフロー・action 定義などを変更したときだけ |
 | Semgrep | アプリケーションコード（ルールセット `p/default`・severity ERROR）。PR で新規に増えた検出のみ |
-| Trivy | 依存パッケージの脆弱性と IaC の設定ミス（MEDIUM 以上・修正版があるもの）、Dockerfile からビルドしたイメージの脆弱性 |
+| Trivy | 依存パッケージの脆弱性と IaC の設定ミス（MEDIUM 以上・修正版があるもの）、Dockerfile からビルドしたイメージの脆弱性。Renovate の PR は報告だけで失敗しない |
 
 ### ✏️ スタイルチェック
 
@@ -119,12 +115,12 @@ security チーム（`teams.tf`）は、Gitleaks や Trivy などがセキュリ
 | `bundle-size-measure` / `bundle-size-comment` | フロントエンド（Next.js / Astro）の JS・CSS の gzip 後のサイズの増減を PR にコメント（報告だけで失敗しない） |
 
 > 必須ワークフローは、対象 repo のコードを実行してよい（`style.yml` の `python` / `typescript` job の `uv sync` / `bun install` による依存導入と、その環境上で動く Pyright / lint-imports / deptry / Biome / knip / tsc、`terraform` job の `terraform init` / `validate` / `test` が実行する provider・module、`bundle-size-measure` job の `bun install` とビルドなど）。ただし次を守る。
-> - `permissions` は read のみとし、secrets を使わない（例外: `terraform` job の `terraform init` の step にだけ、private の Module Registry（registry.fastship.jp）の読み取りトークン `REGISTRY_TOKEN` を渡す。PR にコメントする `bundle-size-comment` job にだけ `pull-requests: write` を付ける。この job は checkout せず、PR のコードを動かさない）。トリガーは `pull_request` とし、`pull_request_target` では動かさない
+> - `permissions` は read のみとし、secrets を使わない（例外: `terraform` job にだけ `id-token: write` を付け、private の Module Registry（registry.fastship.jp）の ID トークンを [registry-fastship-action](https://github.com/theindiehacker/registry-fastship-action) で取得して、`terraform init` の step にだけ渡す。fork からの PR では取得できない。PR にコメントする `bundle-size-comment` job にだけ `pull-requests: write` を付ける。この job は checkout せず、PR のコードを動かさない）。トリガーは `pull_request` とし、`pull_request_target` では動かさない
 > - `actions/checkout` は `persist-credentials: false` にする
 > - PR のコードを実行する処理は `lint` と別の job にし、対象のファイルがあるときだけ動かす（常に動く `lint` の job では PR のコードを実行しない）
 > - repo の環境に依存して失敗し得る前提は、下の「導入時の前提」に書く。対応できない repo は「例外運用」で外す
 >
-> この条件なら、PR のコードが動いても、その repo の通常の CI と同じで越えられる権限の境界は無い。
+> この条件なら、PR のコードが動いても、その repo の通常の CI と同じで越えられる権限の境界は無い。`terraform` job の PR のコードは ID トークンを取得できるが、ブランチに push できる人は自分のワークフローでも取得できる（fork からの PR では、どちらも取得できない）。
 >
 > バンドルサイズは、PR のコードを動かす計測の job（`bundle-size-measure`）を read のみにし、その結果を artifact で受け取ってコメントする job（`bundle-size-comment`）だけに `pull-requests: write` を付ける。依存パッケージが侵害されても write のトークンは読めず、コメントの投稿先もその PR に固定される。public repo の fork からの PR では、トークンが read のみになるためコメントされない（マージは止めない）。
 >
@@ -136,13 +132,13 @@ security チーム（`teams.tf`）は、Gitleaks や Trivy などがセキュリ
 1. Pyright の型エラーがある（検査対象と厳しさは `uv.lock` のあるディレクトリの `[tool.pyright]` / `pyrightconfig.json` に従い、workspace のメンバーの設定は読まない。設定が無ければそのディレクトリ全体を standard モードで検査し、別の `uv.lock` を持つ入れ子のディレクトリは除く。設定を書いた場合は、入れ子のディレクトリを `exclude` に入れる。`extends` で読む共有の設定は `pyright*.json` という名前にする (それだけを変えた PR でも検査が動く)。`include` に存在しないパスがある・知らない設定や不正な値がある・利用者の設定で検査するファイルが 0 件のときも fail する。mypy の設定は使わない）
 2. `autogenerated by uv` で始まらない `requirements*.txt` を依存管理に使っている（`pyproject.toml` の隣にあるもの、`pyproject.toml` が無い repo では Python コードがある場合のみ対象）
 3. `bun.lock` をコミットしていない（`bun install --frozen-lockfile` が失敗する）
-4. `@biomejs/biome` / `knip` / `typescript` を devDependencies に持たない（`package.json` がある repo のみ対象）
+4. `@biomejs/biome` / `knip` / `typescript` を依存（dependencies か devDependencies）に持たない（`package.json` がある repo のみ対象）。`bunfig.toml` の `[install]` で `production = true` か `dev = false` にしている repo は、devDependencies を入れないため dependencies に持つ
 5. ruff の `S` ルール（bandit 相当。`S101` を除く）に違反している（repo の `ignore` では外せない。誤検知は `# noqa: Sxxx` か `per-file-ignores` で個別に外す）
 6. `.terraform.lock.hcl` に linux_amd64 のハッシュが無い（`terraform init -lockfile=readonly` で provider を検証できない。`terraform providers lock -platform=linux_amd64 -platform=darwin_arm64` などで追記する）
 7. `terraform test` がクラウドの認証情報を必要とする（認証情報は渡さないため、`command = plan` と `mock_provider` で完結するテストだけが通る）
 8. Terraform 1.16.0（`style.yml` で固定）で動かない `required_version` を宣言している
 9. tflint（`style.yml` の固定設定）の違反がある、または `.tf` に `tflint-ignore` コメントがある（違反は変更したディレクトリのみ検査するが、`tflint-ignore` の禁止は repo 全体が対象）
-10. registry.fastship.jp のモジュールを使っているのに、Organization の secret `REGISTRY_TOKEN` へのアクセスが許可されていない（`terraform init` が 401 で失敗する）
+10. registry.fastship.jp のモジュールを使っているのに、その repo の org が registry.fastship.jp の契約企業に登録されていない、または fork からの PR である（`terraform init` が 401 で失敗する）
 
 バンドルサイズの計測は、サイズが増えても、ビルドの失敗やタイムアウト（40 分）でも fail しないため、前提は無い。ただし次の場合は計測されない、または一部だけが計測される。
 
@@ -198,6 +194,8 @@ git ls-remote https://github.com/theindiehacker/github-workflows 'refs/tags/v1.0
 
 3. main にマージ後、PR を作るとコードレビューが自動で投稿されることを確認する (再レビューは PR に `/code-review` とコメントする)
 
+セキュリティレビューは、コメント (`/security-review`) で頼んだときだけ動く。PR の作成時 (Draft は Ready にしたとき) にも動かすには、`security-review` job の `if` に `code-review` job と同じ `pull_request` の条件を足す (FastShip の `/dev:setup` が足す)。
+
 > 💡 本リポジトリは `github-workflows` → `devops` → `github-workflows` と改名した。git clone や API は旧名からリダイレクトされるが、`uses:` はリダイレクトされず、旧名の `uses: theindiehacker/devops/...` はワークフローの起動時点で失敗する。そのため `theindiehacker/github-workflows/...` に書き換える（旧名 `devops` でリポジトリを作り直すと参照先が乗っ取られるため、旧名は再利用しない）。ruleset はリポジトリ名ではなく ID で紐付くため、改名後の再設定は不要
 
 ---
@@ -221,7 +219,7 @@ git ls-remote https://github.com/theindiehacker/github-workflows 'refs/tags/v1.0
 - タグがまだ無い場合は、`bump` に関係なく `v1.0.0` になる
 - main の先頭にすでにタグが付いている場合は、何も作らずに失敗で終わる（新しい変更をマージしてから実行し直す）
 - `main` 以外のブランチを選んだ場合は job が skip される
-- タグは `GITHUB_TOKEN` で作るため、タグの作成は制限していない。write 権限を持つメンバーは、ワークフローの書き換えや直接の push でレビューを経ないコミットにもタグを付けられる（呼び出し側ではマイナー・パッチの更新が自動マージされる）。write 権限は信頼できるメンバーだけに付与する
+- タグを作れるのは GitHub Actions（`GITHUB_TOKEN`）だけで、直接の push や Claude App のトークンでは作れない（「🏷️ リリースタグの作成を制限」）。ただし write 権限を持つメンバーは、ワークフローを書き換えれば、レビューを経ないコミットにもタグを付けられる（呼び出し側ではマイナー・パッチの更新が自動マージされる）。write 権限は信頼できるメンバーだけに付与する
 - 実行は 1 回ずつ行う。実行中に続けて 2 回以上実行すると、待機中の実行は最後の 1 回に置き換えられる
 
 付けたタグは「🔒 リリースタグの変更禁止」（「2.」）で更新・削除できない。誤ったタグを付けた場合も付け替えず、修正を入れた次のバージョンを出す。

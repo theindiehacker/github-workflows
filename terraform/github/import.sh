@@ -28,39 +28,9 @@ import() {
   fi
 }
 
-# $1: API のパス。id を出す。404 のときだけ何も出さず、ほかのエラー（認証・scope・5xx）では止める
-lookup_id() {
-  local out
-  if out=$(gh api "$1" --jq .id 2>&1); then
-    printf '%s\n' "${out}"
-  elif [[ "${out}" != *"HTTP 404"* ]]; then
-    printf '%s\n' "${out}" >&2
-    return 1
-  fi
-}
-
 # 引数の中のコマンド置換は失敗しても set -e で止まらないため、いったん変数に入れる
 org_id=$(gh api "orgs/${owner}" --jq .id)
 import github_organization_settings.this "${org_id}"
-
-team_id=$(lookup_id "orgs/${owner}/teams/security")
-import github_team.security "${team_id}"
-import github_team_members.security "${team_id}"
-
-for role in security_manager all_repo_write; do
-  role_id=$(gh api "orgs/${owner}/organization-roles" --jq ".roles[] | select(.name == \"${role}\") | .id")
-  if [ -z "${role_id}" ]; then
-    echo "Organization role ${role} が見つかりません" >&2
-    exit 1
-  fi
-  # パイプで grep -q に渡すと、grep が先に終わったときに gh が SIGPIPE で失敗し、pipefail で一致しなかった扱いになる
-  teams=$(gh api --paginate "orgs/${owner}/organization-roles/${role_id}/teams" --jq '.[].slug')
-  assigned=""
-  if grep -qxF security <<< "${teams}"; then
-    assigned="${role_id}:security"
-  fi
-  import "github_organization_role_team.security[\"${role}\"]" "${assigned}"
-done
 
 # ルールセットは名前で探す（rulesets.tf の name と同じ）。名前が違うと別のルールセットが作られるため、
 # 取り込まなかったルールセットを最後に出す（統合して不要になった旧ルールセットは消す。
@@ -75,11 +45,10 @@ import_ruleset() {
 import_ruleset github_organization_ruleset.main_push '🚫 main への直接 push 禁止'
 import_ruleset github_organization_ruleset.pull_request_approval '✅ PR の承認を必須化'
 import_ruleset github_organization_ruleset.security_scan '🛡️ 脆弱性・IaC 設定ミス検知'
-import_ruleset github_organization_ruleset.security_config_review '✔️ セキュリティ設定変更の承認必須化'
-import_ruleset github_organization_ruleset.workflow_change_review '🛠️ 検知ワークフロー変更の承認必須化'
 import_ruleset github_organization_ruleset.style_check '✏️ スタイルチェック'
 import_ruleset github_organization_ruleset.sensitive_files '🚫 機密ファイルの push 禁止'
 import_ruleset github_organization_ruleset.release_tags '🔒 リリースタグの変更禁止'
+import_ruleset github_organization_ruleset.release_tag_creation '🏷️ リリースタグの作成を制限'
 
 import github_actions_organization_permissions.this "${owner}"
 import github_actions_organization_workflow_permissions.this "${owner}"

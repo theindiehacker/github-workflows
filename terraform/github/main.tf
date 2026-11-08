@@ -9,16 +9,11 @@ locals {
 
   # 今の値を読むだけで、Terraform では管理しない項目の取得元（billing_email など）
   organization = jsondecode(data.github_rest_api.organization.body)
-
-  # Organization role の名前 → ID（security_manager / all_repo_write などの定義済みロールも含む）
-  role_ids = { for role in data.github_organization_roles.all.roles : role.name => role.role_id }
 }
 
 data "github_rest_api" "organization" {
   endpoint = "orgs/${local.owner}"
 }
-
-data "github_organization_roles" "all" {}
 
 # 必須ワークフローの実体と、この repo だけに掛けるルールセットの対象（ルールセットは repo を名前ではなく ID で持つ）
 data "github_repository" "github_workflows" {
@@ -28,6 +23,11 @@ data "github_repository" "github_workflows" {
 # Renovate の更新 PR を承認なしで自動マージするため、「✅ PR の承認を必須化」の bypass に入れる
 data "github_app" "renovate" {
   slug = "renovate-${local.owner}"
+}
+
+# Release ワークフローが GITHUB_TOKEN でリリースタグを作るため、「🏷️ リリースタグの作成を制限」の bypass に入れる
+data "github_app" "github_actions" {
+  slug = "github-actions"
 }
 
 # 二要素認証の必須化は API で変えられないため、UI で設定し、ここでは plan のときに確かめるだけにする

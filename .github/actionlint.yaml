@@ -1,0 +1,5 @@
+# actionlint v1.7.12 は $/ 記法に未対応のため、そのエラーだけ無視する (rhysd/actionlint#711)。対応したら消す
+paths:
+  .github/workflows/**/*.yml:
+    ignore:
+      - 'specifying action "\$/[^"]+" in invalid format because ref is missing'

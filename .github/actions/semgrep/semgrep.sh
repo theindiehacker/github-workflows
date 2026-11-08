@@ -4,7 +4,7 @@
 set -euo pipefail
 
 # コンテナは root で動くため、runner が checkout した作業ツリーを git に信頼させる（--baseline-commit が git を使う）。
-# --disable-nosem: インライン nosemgrep コメントを無効化（抑制は承認必須の .semgrepignore に限定する）
+# --disable-nosem: インライン nosemgrep コメントを無効化（抑制は .semgrepignore に限定する）
 docker run --rm \
   --volume "${GITHUB_WORKSPACE}:/src" --workdir /src \
   --env GIT_CONFIG_COUNT=1 --env GIT_CONFIG_KEY_0=safe.directory --env GIT_CONFIG_VALUE_0=/src \
