@@ -6,6 +6,7 @@ import { z } from "zod";
 import { buildUrl } from "./build-url";
 import { db } from "./db";
 
+const API_BASE = "https://api.example.com";
 const BASE = "/data";
 const schema = z.object({ url: z.string() });
 
@@ -29,6 +30,18 @@ export async function GET(req: NextRequest) {
   await fetch(`https://api.example.com/users/${url}`);
   // ok: nextjs-ssrf
   await fetch("https://api.example.com/x", { method: "POST", body: url });
+  // ok: nextjs-ssrf
+  await fetch(`${API_BASE}/users/${url}`);
+  // ok: nextjs-ssrf
+  await fetch(`${process.env.API_BASE}/users/${url}`);
+  // ok: nextjs-ssrf
+  await fetch(new URL("/api/x", req.url));
+  // ruleid: nextjs-ssrf
+  await fetch(new URL(`/${url}`, req.url));
+  // ruleid: nextjs-ssrf
+  await fetch(new URL("/api/x", url));
+  // ruleid: nextjs-ssrf
+  await fetch(`https://${encodeURIComponent(url)}/x`);
 
   // ruleid: nextjs-path-traversal
   await readFile(`/data/${q.get("file")}`);
@@ -38,6 +51,8 @@ export async function GET(req: NextRequest) {
   await readFile(path.join(BASE, path.basename(q.get("file")!)));
   // ok: nextjs-path-traversal
   await readFile("/data/fixed.txt");
+  // ruleid: nextjs-path-traversal
+  await readFile(`/data/${encodeURIComponent(q.get("file")!)}`);
 
   // ruleid: nextjs-sql-injection
   await db.query(`SELECT * FROM t WHERE a = '${q.get("a")}'`);
@@ -49,11 +64,33 @@ export async function GET(req: NextRequest) {
   await db.query({ query: "x", variables: { a: q.get("a") } });
   // ok: nextjs-sql-injection
   await db.query(`SELECT * FROM t WHERE a = ${Number(q.get("a"))}`);
+  // ok: nextjs-sql-injection
+  await db.query({ text: "SELECT * FROM t WHERE a = $1", values: [q.get("a")] });
+  // ruleid: nextjs-sql-injection
+  await db.query({ text: `SELECT * FROM t WHERE a = '${q.get("a")}'` });
+  // ruleid: nextjs-sql-injection
+  await db.execute({ sql: `SELECT * FROM t WHERE a = '${q.get("a")}'` });
+  // ruleid: nextjs-sql-injection
+  await db.query(`SELECT * FROM t WHERE a = '${encodeURIComponent(q.get("a")!)}'`);
+  // ruleid: nextjs-sql-injection
+  await db.query(`SELECT * FROM t WHERE a = '${path.basename(q.get("a")!)}'`);
 
   // ok: nextjs-open-redirect
   NextResponse.redirect(new URL("/login", req.url));
   // ok: nextjs-open-redirect
+  NextResponse.redirect(new URL("/login", req.nextUrl));
+  // ok: nextjs-open-redirect
   NextResponse.redirect(new URL(`/users/${q.get("id")}`, req.url));
+  // ruleid: nextjs-open-redirect
+  NextResponse.redirect(new URL(`/${q.get("id")}`, req.url));
+  // ruleid: nextjs-open-redirect
+  NextResponse.redirect(new URL(`//${q.get("id")}`, req.url));
+  // ruleid: nextjs-open-redirect
+  NextResponse.redirect(new URL("/" + q.get("id"), req.url));
+  // ruleid: nextjs-open-redirect
+  NextResponse.redirect(new URL("/x", `https://${req.headers.get("x-forwarded-host")}`));
+  // ruleid: nextjs-open-redirect
+  NextResponse.redirect(new URL("/x", q.get("base")!));
   // ruleid: nextjs-open-redirect
   return NextResponse.redirect(q.get("next")!);
 }
@@ -71,6 +108,12 @@ export async function POST(req: NextRequest) {
   execFile("ls", [dir]);
   // ok: nextjs-command-injection
   exec("ls");
+  // ok: nextjs-command-injection
+  exec(`ls ${Number(dir)}`);
+  // ruleid: nextjs-command-injection
+  exec(`ls ${encodeURIComponent(dir)}`);
+  // ruleid: nextjs-command-injection
+  exec(`ls ${path.basename(dir)}`);
 
   // ruleid: nextjs-code-injection
   eval(body.code);
@@ -78,6 +121,8 @@ export async function POST(req: NextRequest) {
   new Function("return 1", code);
   // ok: nextjs-code-injection
   eval("1 + 1");
+  // ruleid: nextjs-code-injection
+  eval(encodeURIComponent(code));
 
   // ruleid: nextjs-ssrf
   await fetch(target);

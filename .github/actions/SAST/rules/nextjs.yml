@@ -54,21 +54,19 @@ rules:
       - pattern: headers()
       - pattern: cookies()
       - pattern: useSearchParams()
-    pattern-sanitizers: &sanitizers
-      - pattern: encodeURIComponent(...)
+    pattern-sanitizers:
       - pattern: Number(...)
       - pattern: parseInt(...)
       - pattern: parseFloat(...)
-      - pattern: path.basename(...)
-      - pattern: basename(...)
-      - pattern: DOMPurify.sanitize(...)
-      - pattern: sanitizeHtml(...)
-      # 固定のパスを基準の URL に解決するだけなので、宛先を変えられない
+      # 固定のパス (// で始まらず、連結もしない) をリクエストの URL に解決するだけなら、ホストを変えられない
       - patterns:
-          - pattern: new URL($PATH, ...)
+          - pattern: new URL($PATH, $BASE)
           - metavariable-regex:
               metavariable: $PATH
-              regex: ^["'`]/
+              regex: ^("/([^/\\"][^"]*)?"|'/([^/\\'][^']*)?'|`/[^/`$\\][^`]*)$
+          - metavariable-regex:
+              metavariable: $BASE
+              regex: ^(req|request)\.(url|nextUrl(\.origin|\.href)?)$
     pattern-sinks:
       - patterns:
           - pattern-either:
@@ -82,7 +80,7 @@ rules:
           # 宛先のホストが固定の URL (パスだけが変わる) は SSRF にしない
           - metavariable-regex:
               metavariable: $URL
-              regex: ^(?!`https?://[^/$`]+/)
+              regex: ^(?!`(https?://[^/$`]+/|\$\{[A-Z][A-Z0-9_]*\}/|\$\{process\.env\.\w+\}/))
 
   - id: nextjs-path-traversal
     mode: taint
@@ -95,7 +93,12 @@ rules:
       cwe: "CWE-22: Improper Limitation of a Pathname to a Restricted Directory"
       confidence: MEDIUM
     pattern-sources: *sources
-    pattern-sanitizers: *sanitizers
+    pattern-sanitizers:
+      - pattern: Number(...)
+      - pattern: parseInt(...)
+      - pattern: parseFloat(...)
+      - pattern: path.basename(...)
+      - pattern: basename(...)
     pattern-sinks:
       - patterns:
           - pattern-either:
@@ -128,7 +131,10 @@ rules:
       cwe: "CWE-89: Improper Neutralization of Special Elements used in an SQL Command"
       confidence: MEDIUM
     pattern-sources: *sources
-    pattern-sanitizers: *sanitizers
+    pattern-sanitizers:
+      - pattern: Number(...)
+      - pattern: parseInt(...)
+      - pattern: parseFloat(...)
     pattern-sinks:
       - patterns:
           - pattern-either:
@@ -139,10 +145,21 @@ rules:
               - pattern: $DB.$queryRawUnsafe($S, ...)
               - pattern: $DB.$executeRawUnsafe($S, ...)
           - focus-metavariable: $S
-          # オブジェクトを渡す API (GraphQL など) は SQL にしない
+          # オブジェクトを渡す API (GraphQL など) は、下の text / sql だけを SQL として見る
           - metavariable-regex:
               metavariable: $S
               regex: ^[^{]
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  $DB.query({..., text: $S, ...}, ...)
+              - pattern: |
+                  $DB.query({..., sql: $S, ...}, ...)
+              - pattern: |
+                  $DB.execute({..., text: $S, ...}, ...)
+              - pattern: |
+                  $DB.execute({..., sql: $S, ...}, ...)
+          - focus-metavariable: $S
 
   - id: nextjs-open-redirect
     mode: taint
@@ -160,17 +177,22 @@ rules:
       - pattern: Number(...)
       - pattern: parseInt(...)
       - pattern: parseFloat(...)
+      # 固定のパス (// で始まらず、連結もしない) をリクエストの URL に解決するだけなら、ホストを変えられない
       - patterns:
-          - pattern: new URL($PATH, ...)
+          - pattern: new URL($PATH, $BASE)
           - metavariable-regex:
               metavariable: $PATH
-              regex: ^["'`]/
-      # 固定のパスで始まるテンプレートは、サイトの外へ飛ばせない (// と /${x} は除く)
+              regex: ^("/([^/\\"][^"]*)?"|'/([^/\\'][^']*)?'|`/[^/`$\\][^`]*)$
+          - metavariable-regex:
+              metavariable: $BASE
+              regex: ^(req|request)\.(url|nextUrl(\.origin|\.href)?)$
+      # 固定のパスで始まるテンプレートは、サイトの外へ飛ばせない (// と /${x} と連結は除く)。
+      # Semgrep が見るテンプレートの範囲は閉じのバッククォートを含まないため、バッククォートなしで行末まで一致させる
       - patterns:
           - pattern: $T
           - metavariable-regex:
               metavariable: $T
-              regex: ^`/[^/`$\\]
+              regex: ^`/[^/`$\\][^`]*$
     pattern-sinks:
       - patterns:
           - pattern-either:
@@ -196,7 +218,10 @@ rules:
       cwe: "CWE-78: Improper Neutralization of Special Elements used in an OS Command"
       confidence: HIGH
     pattern-sources: *sources
-    pattern-sanitizers: *sanitizers
+    pattern-sanitizers:
+      - pattern: Number(...)
+      - pattern: parseInt(...)
+      - pattern: parseFloat(...)
     pattern-sinks:
       - patterns:
           - pattern-either:
@@ -217,7 +242,10 @@ rules:
       cwe: "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"
       confidence: HIGH
     pattern-sources: *sources
-    pattern-sanitizers: *sanitizers
+    pattern-sanitizers:
+      - pattern: Number(...)
+      - pattern: parseInt(...)
+      - pattern: parseFloat(...)
     pattern-sinks:
       - patterns:
           - pattern-either:
@@ -236,7 +264,12 @@ rules:
       cwe: "CWE-79: Improper Neutralization of Input During Web Page Generation"
       confidence: HIGH
     pattern-sources: *sources
-    pattern-sanitizers: *sanitizers
+    pattern-sanitizers:
+      - pattern: Number(...)
+      - pattern: parseInt(...)
+      - pattern: parseFloat(...)
+      - pattern: DOMPurify.sanitize(...)
+      - pattern: sanitizeHtml(...)
     pattern-sinks:
       - patterns:
           - pattern-either:
