@@ -24,19 +24,33 @@ app.add_middleware(
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origin_regex=".*")
 
 # ruleid: python-cors-credentials-any-origin
-app.add_middleware(CORSMiddleware, allow_origin_regex=r"^https://.*$", allow_credentials=True)
+app.add_middleware(
+    CORSMiddleware, allow_origin_regex=r"^https://.*$", allow_credentials=True
+)
 
-# ruleid: python-cors-credentials-any-origin
-middleware = [Middleware(CORSMiddleware, allow_origins=["https://app.example", "*"], allow_credentials=True)]
+middleware = [
+    # ruleid: python-cors-credentials-any-origin
+    Middleware(
+        CORSMiddleware,
+        allow_origins=["https://app.example", "*"],
+        allow_credentials=True,
+    )
+]
 
 # ok: python-cors-credentials-any-origin
 app.add_middleware(CORSMiddleware, allow_origins=["*"])
 
 # ok: python-cors-credentials-any-origin
-app.add_middleware(CORSMiddleware, allow_origins=["https://app.example"], allow_credentials=True)
+app.add_middleware(
+    CORSMiddleware, allow_origins=["https://app.example"], allow_credentials=True
+)
 
 # ok: python-cors-credentials-any-origin
-app.add_middleware(CORSMiddleware, allow_origin_regex=r"https://.*\.example\.com", allow_credentials=True)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"https://.*\.example\.com",
+    allow_credentials=True,
+)
 
 
 def unzip(archive: Path, dest: Path) -> None:
@@ -90,7 +104,8 @@ def update(user, body: dict) -> None:
 
 
 def update_keys(user, body: dict) -> None:
-    for key in body:
+    # 検知させたい書き方なので、ruff の指摘 (.items() を使う) は外す
+    for key in body:  # noqa: PLC0206
         # ruleid: python-mass-assignment
         setattr(user, key, body[key])
 
