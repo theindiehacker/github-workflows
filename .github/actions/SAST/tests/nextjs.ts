@@ -202,6 +202,10 @@ async function localFetch(value: string) {
   return fetch(value);
 }
 
+function setHost(u: URL, host: string) {
+  u.host = host;
+}
+
 export function middleware(req: NextRequest) {
   const target = req.nextUrl.searchParams.get("target");
   if (!target) {
@@ -245,6 +249,38 @@ export function middleware(req: NextRequest) {
   if (target === "assign-path") {
     const url = req.nextUrl.clone();
     Object.assign(url, { pathname: "/login" });
+    // ok: nextjs-rewrite
+    return NextResponse.rewrite(url);
+  }
+  if (target === "assign-tainted-path") {
+    const url = req.nextUrl.clone();
+    Object.assign(url, { pathname: target });
+    // ok: nextjs-rewrite
+    return NextResponse.rewrite(url);
+  }
+  if (target === "alias") {
+    const url = req.nextUrl.clone();
+    const alias = url;
+    alias.host = target;
+    // ruleid: nextjs-rewrite
+    return NextResponse.rewrite(url);
+  }
+  if (target === "computed") {
+    const url = req.nextUrl.clone();
+    // ruleid: nextjs-rewrite
+    url["host"] = target;
+    return NextResponse.rewrite(url);
+  }
+  if (target === "helper") {
+    const url = req.nextUrl.clone();
+    setHost(url, target);
+    // ruleid: nextjs-rewrite
+    return NextResponse.rewrite(url);
+  }
+  if (target === "log") {
+    const url = req.nextUrl.clone();
+    console.log(url);
+    url.pathname = "/login";
     // ok: nextjs-rewrite
     return NextResponse.rewrite(url);
   }

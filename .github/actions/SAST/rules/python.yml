@@ -15,7 +15,9 @@ rules:
       - pattern-either:
           - pattern: $APP.add_middleware(CORSMiddleware, ..., allow_origins=[..., "*", ...], ...)
           - pattern: Middleware(CORSMiddleware, ..., allow_origins=[..., "*", ...], ...)
-          # 定数などの変数に入れた一覧
+          - pattern: $APP.add_middleware(CORSMiddleware, ..., allow_origins=(..., "*", ...), ...)
+          - pattern: Middleware(CORSMiddleware, ..., allow_origins=(..., "*", ...), ...)
+          # 定数などの変数に入れた一覧 (あとで別の一覧を代入し直したものは除く)
           - patterns:
               - pattern-either:
                   - pattern-inside: |
@@ -24,6 +26,11 @@ rules:
                   - pattern-inside: |
                       $V = (..., "*", ...)
                       ...
+              - pattern-not-inside: |
+                  $V = $W
+                  ...
+                  $V = $W2
+                  ...
               - pattern-either:
                   - pattern: $APP.add_middleware(CORSMiddleware, ..., allow_origins=$V, ...)
                   - pattern: Middleware(CORSMiddleware, ..., allow_origins=$V, ...)
@@ -55,22 +62,64 @@ rules:
       - pattern: os.path.basename(...)
       - pattern: Path(...).name
       - pattern: PurePath(...).name
-      # 置き場の中かを確かめた後のパスは、置き場の外を指さない。
-      # is_relative_to・relative_to は文字列で比べるだけで ../ を畳まないので、resolve() したパスで確かめたときだけにする
+      # 置き場の中かを確かめ、外なら止めた後のパスは、置き場の外を指さない。
+      # is_relative_to・relative_to は文字列で比べるだけで ../ を畳まないので、resolve() したパスで確かめたときだけにする。
+      # is_relative_to は、結果が偽のときに raise・return・continue・break で止めたときだけにする
       - by-side-effect: true
         patterns:
+          - pattern-either:
+              - pattern-inside: |
+                  if not $CHECK:
+                      ...
+                      raise ...
+              - pattern-inside: |
+                  if not $CHECK:
+                      ...
+                      return ...
+              - pattern-inside: |
+                  if not $CHECK:
+                      ...
+                      continue
+              - pattern-inside: |
+                  if not $CHECK:
+                      ...
+                      break
+              - pattern-inside: |
+                  if not $CHECK or $OTHER:
+                      ...
+                      raise ...
+              - pattern-inside: |
+                  if not $CHECK or $OTHER:
+                      ...
+                      return ...
+          - metavariable-pattern:
+              metavariable: $CHECK
+              pattern-either:
+                - pattern: $T.resolve(...).is_relative_to(...)
+                - pattern: $T.is_relative_to(...)
           - pattern-either:
               - pattern: $T.resolve(...).is_relative_to(...)
-              - pattern: $T.resolve(...).relative_to(...)
+              - patterns:
+                  - pattern-inside: |
+                      $T = $X.resolve(...)
+                      ...
+                  - pattern: $T.is_relative_to(...)
           - focus-metavariable: $T
+      # relative_to は、置き場の外なら ValueError で止まる (try で受け止めたときは除く)
       - by-side-effect: true
         patterns:
-          - pattern-inside: |
-              $T = $X.resolve(...)
-              ...
           - pattern-either:
-              - pattern: $T.is_relative_to(...)
-              - pattern: $T.relative_to(...)
+              - pattern: $T.resolve(...).relative_to(...)
+              - patterns:
+                  - pattern-inside: |
+                      $T = $X.resolve(...)
+                      ...
+                  - pattern: $T.relative_to(...)
+          - pattern-not-inside: |
+              try:
+                  ...
+              except $E:
+                  ...
           - focus-metavariable: $T
     pattern-sinks:
       - patterns:
@@ -116,30 +165,44 @@ rules:
       - pattern-not-inside: |
           for $K, $V in $M.dict(...).items():
               ...
-      # 許可リスト (定数か、文字列を並べたリテラル) で絞っていれば除く。user.__table__.columns や受け取った dict では絞れていない
-      - pattern-either:
-          - patterns:
-              - pattern: setattr(...)
-              - pattern-not-inside: |
-                  if $K in $X:
-                      ...
-              - pattern-not-inside: |
-                  if $K not in $X:
-                      continue
-                  ...
-          - patterns:
-              - pattern: setattr(...)
-              - pattern-either:
-                  - pattern-inside: |
-                      if $K in $X:
-                          ...
-                  - pattern-inside: |
-                      if $K not in $X:
-                          continue
-                      ...
-              - metavariable-regex:
-                  metavariable: $X
-                  regex: ^(?!(\w+\.)*[A-Z][A-Z0-9_]*$|(frozenset\()?[\[{(]\s*["'][^"']*["'](\s*,\s*["'][^"']*["'])*\s*,?\s*[\]})]\)?$)
+      # 許可リスト (文字列を並べたリテラルか、それを代入した名前) で絞っていれば除く。
+      # user.__table__.columns や受け取った dict、内包表記で作った集合では絞れていない
+      - pattern-not-inside: |
+          if $K in {"...", ...}:
+              ...
+      - pattern-not-inside: |
+          if $K in ("...", ...):
+              ...
+      - pattern-not-inside: |
+          if $K in ["...", ...]:
+              ...
+      - pattern-not-inside: |
+          $C = {"...", ...}
+          ...
+          if $K in $C:
+              ...
+      - pattern-not-inside: |
+          $C = frozenset({"...", ...})
+          ...
+          if $K in $C:
+              ...
+      - pattern-not-inside: |
+          $C = ("...", ...)
+          ...
+          if $K in $C:
+              ...
+      - pattern-not-inside: |
+          $C = {"...", ...}
+          ...
+          if $K not in $C:
+              continue
+          ...
+      - pattern-not-inside: |
+          $C = frozenset({"...", ...})
+          ...
+          if $K not in $C:
+              continue
+          ...
       # 定数 (DEFAULTS など) を回すのは、受け取った値ではない
       - metavariable-regex:
           metavariable: $B
@@ -175,8 +238,50 @@ rules:
       - pattern: nh3.clean(...)
       - pattern: int(...)
       - pattern: float(...)
-      # autoescape を有効にした Environment と、Starlette の Jinja2Templates (autoescape が有効) のテンプレートはエスケープされる。
-      # Environment() と jinja2.Template は既定で autoescape せず、Markdown の render() は HTML をそのまま通す
+      # テンプレートの render() はエスケープするとみなす (Jinja2Templates や、別のモジュールで作った Environment など)。
+      # このファイルで作った、エスケープしないものだけを除く: autoescape を付けない Environment と jinja2.Template
+      # (どちらも既定で autoescape しない)、Markdown の変換 (HTML をそのまま通す)
+      - patterns:
+          - pattern: $T.render(...)
+          - pattern-not: $E.$M(...).render(...)
+          - pattern-not: jinja2.Template(...).render(...)
+          - pattern-not: markdown_it.MarkdownIt(...).render(...)
+          - pattern-not-inside: |
+              $T = jinja2.Template(...)
+              ...
+          - pattern-not-inside: |
+              $T = markdown_it.MarkdownIt(...)
+              ...
+          - pattern-not-inside: |
+              $T = markdown.Markdown(...)
+              ...
+          - pattern-not-inside: |
+              $T = mistune.create_markdown(...)
+              ...
+          - pattern-not-inside: |
+              $E = jinja2.Environment(...)
+              ...
+              $T = $E.$M(...)
+              ...
+          - pattern-not-inside: |
+              $E = jinja2.sandbox.SandboxedEnvironment(...)
+              ...
+              $T = $E.$M(...)
+              ...
+      - patterns:
+          - pattern: $E.$M(...).render(...)
+          # Template や MarkdownIt を import した名前で呼ぶと、jinja2.Template(...) などの形にも一致する
+          - pattern-not: jinja2.Template(...).render(...)
+          - pattern-not: markdown_it.MarkdownIt(...).render(...)
+          - pattern-not: jinja2.Environment(...).$M(...).render(...)
+          - pattern-not: jinja2.sandbox.SandboxedEnvironment(...).$M(...).render(...)
+          - pattern-not-inside: |
+              $E = jinja2.Environment(...)
+              ...
+          - pattern-not-inside: |
+              $E = jinja2.sandbox.SandboxedEnvironment(...)
+              ...
+      # このファイルで作った Environment でも、autoescape を有効にしたものはエスケープする
       - patterns:
           - pattern-either:
               - pattern-inside: |
@@ -185,13 +290,13 @@ rules:
               - pattern-inside: |
                   $E = $ENV(..., autoescape=select_autoescape(...), ...)
                   ...
-              - pattern-inside: |
-                  $E = Jinja2Templates(...)
-                  ...
           - pattern-either:
-              - pattern: $E.get_template(...).render(...)
-              - pattern: $E.from_string(...).render(...)
-              - pattern: $E.env.get_template(...).render(...)
+              - pattern: $E.$M(...).render(...)
+              - patterns:
+                  - pattern-inside: |
+                      $T = $E.$M(...)
+                      ...
+                  - pattern: $T.render(...)
     pattern-sinks:
       - patterns:
           - pattern-either:
@@ -244,13 +349,13 @@ rules:
           "...".format(...)
       - pattern: |
           "..." % $X
-      # += でつないだもの。固定の文字列を足すだけ (条件で句を足す書き方) は除く
+      # += でつないだもの。固定の文字列・定数・固定の文字列の join を足すだけ (条件で句を足す書き方) は除く
       - by-side-effect: true
         patterns:
           - pattern: $Q += $Y
           - metavariable-regex:
               metavariable: $Y
-              regex: ^(?![rRbBuU]?["'])
+              regex: ^(?![rRbBuU]?["']|[A-Z][A-Z0-9_]*$)
           - focus-metavariable: $Q
     pattern-sinks:
       - patterns:

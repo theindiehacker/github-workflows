@@ -11,6 +11,18 @@ export const publicEnv = {
   sentry: process.env["NEXT_PUBLIC_SENTRY_AUTH_TOKEN"],
   // ruleid: nextjs-public-env-secret
   aws: process.env.NEXT_PUBLIC_AWS_SECRET_ACCESS_KEY,
+  // ruleid: nextjs-public-env-secret
+  github: process.env.NEXT_PUBLIC_GITHUB_TOKEN,
+  // ruleid: nextjs-public-env-secret
+  api: process.env.NEXT_PUBLIC_API_TOKEN,
+  // ruleid: nextjs-public-env-secret
+  access: process.env.NEXT_PUBLIC_ACCESS_TOKEN,
+  // ruleid: nextjs-public-env-secret
+  slack: process.env.NEXT_PUBLIC_SLACK_BOT_TOKEN,
+  // ruleid: nextjs-public-env-secret
+  pat: process.env.NEXT_PUBLIC_PERSONAL_ACCESS_TOKEN,
+  // ok: nextjs-public-env-secret
+  rollbar: process.env.NEXT_PUBLIC_ROLLBAR_CLIENT_TOKEN,
   // ok: nextjs-public-env-secret
   mapbox: process.env.NEXT_PUBLIC_MAPBOX_TOKEN,
   // ok: nextjs-public-env-secret
