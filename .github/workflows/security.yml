@@ -135,10 +135,10 @@ jobs:
           targets: ${{ steps.filter.outputs.zizmor_targets_files }}
           github-token: ${{ github.token }}
 
-      - name: "🛡️ SAST"
+      - name: "🛡️ Semgrep"
         if: ${{ !cancelled() }}
         timeout-minutes: 15
-        uses: $/.github/actions/SAST
+        uses: $/.github/actions/semgrep
         with:
           # renovate: datasource=docker depName=semgrep/semgrep
           version: 1.183.0
