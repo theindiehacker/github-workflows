@@ -585,7 +585,8 @@ rules:
               regex: ^(?!false$)
           - focus-metavariable: $C
       # sh -c (-lc・-ec なども) の後の最初の引数 (-- の次も) は、シェルのコマンドとして解釈される。
-      # フラグは、shell 名の直後に並ぶオプション (2 つ目まで) の中だけを見る (["script.sh", "-c", x] の -c は script.sh への引数)
+      # 引数の先頭がオプションのときだけ見る (["script.sh", "-c", x] の -c は script.sh への引数)。
+      # -c の前には、オプションがいくつ並んでもよい (-e -u や、値を取る -o pipefail)
       - patterns:
           - pattern-either:
               - patterns:
@@ -596,15 +597,15 @@ rules:
                       $NS.$F($SH, [$FLAG, $C, ...], ...)
               - patterns:
                   - pattern: |
-                      $F($SH, [$O1, $FLAG, $C, ...], ...)
+                      $F($SH, [$FIRST, ..., $FLAG, $C, ...], ...)
                   - metavariable-regex:
-                      metavariable: $O1
+                      metavariable: $FIRST
                       regex: ^(["']-[^"']*["']|`-[^`]*`?)$
               - patterns:
                   - pattern: |
-                      $NS.$F($SH, [$O1, $FLAG, $C, ...], ...)
+                      $NS.$F($SH, [$FIRST, ..., $FLAG, $C, ...], ...)
                   - metavariable-regex:
-                      metavariable: $O1
+                      metavariable: $FIRST
                       regex: ^(["']-[^"']*["']|`-[^`]*`?)$
               - patterns:
                   - pattern: |
@@ -614,15 +615,15 @@ rules:
                       $NS.$F($SH, [$FLAG, "--", $C, ...], ...)
               - patterns:
                   - pattern: |
-                      $F($SH, [$O1, $FLAG, "--", $C, ...], ...)
+                      $F($SH, [$FIRST, ..., $FLAG, "--", $C, ...], ...)
                   - metavariable-regex:
-                      metavariable: $O1
+                      metavariable: $FIRST
                       regex: ^(["']-[^"']*["']|`-[^`]*`?)$
               - patterns:
                   - pattern: |
-                      $NS.$F($SH, [$O1, $FLAG, "--", $C, ...], ...)
+                      $NS.$F($SH, [$FIRST, ..., $FLAG, "--", $C, ...], ...)
                   - metavariable-regex:
-                      metavariable: $O1
+                      metavariable: $FIRST
                       regex: ^(["']-[^"']*["']|`-[^`]*`?)$
           # テンプレートリテラルは、Semgrep が閉じのバッククォートを含めずに比べる
           - metavariable-regex:
