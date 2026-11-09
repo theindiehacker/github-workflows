@@ -33,6 +33,10 @@ rules:
               - pattern-inside: |
                   export const $M = $WRAP(function ($REQ, ...) { ... }, ...)
               - pattern-inside: |
+                  export const $M = $WRAP($WRAP2(async ($REQ, ...) => { ... }, ...), ...)
+              - pattern-inside: |
+                  export const $M = $WRAP($WRAP2(($REQ, ...) => { ... }, ...), ...)
+              - pattern-inside: |
                   async function $H($REQ, ...) { ... }
                   ...
                   export { $H as $M };
@@ -154,6 +158,22 @@ rules:
                   const $H = async ($REQ, $RES, ...) => { ... };
                   ...
                   export default $H;
+              - pattern-inside: |
+                  function $H($REQ, $RES, ...) { ... }
+                  ...
+                  export default $H;
+              - pattern-inside: |
+                  const $H = ($REQ, $RES, ...) => { ... };
+                  ...
+                  export default $H;
+              - pattern-inside: |
+                  const $H = ($REQ, $RES, ...) => { ... };
+                  ...
+                  export default $WRAP($H, ...);
+              - pattern-inside: |
+                  export default $WRAP($WRAP2(async ($REQ, $RES, ...) => { ... }, ...), ...)
+              - pattern-inside: |
+                  export default $WRAP($WRAP2(($REQ, $RES, ...) => { ... }, ...), ...)
           - pattern-either:
               - pattern: $REQ.query
               - pattern: $REQ.body
@@ -169,6 +189,28 @@ rules:
                   export const getServerSideProps = $WRAP(async ($CTX, ...) => { ... }, ...)
               - pattern-inside: |
                   export const getServerSideProps = $WRAP(async function ($CTX, ...) { ... }, ...)
+              - pattern-inside: |
+                  export const getServerSideProps = $WRAP($WRAP2(async ($CTX, ...) => { ... }, ...), ...)
+              - pattern-inside: |
+                  async function $H($CTX, ...) { ... }
+                  ...
+                  export const getServerSideProps = $H;
+              - pattern-inside: |
+                  async function $H($CTX, ...) { ... }
+                  ...
+                  export const getServerSideProps = $WRAP($H, ...);
+              - pattern-inside: |
+                  const $H = async ($CTX, ...) => { ... };
+                  ...
+                  export const getServerSideProps = $H;
+              - pattern-inside: |
+                  const $H = async ($CTX, ...) => { ... };
+                  ...
+                  export const getServerSideProps = $WRAP($H, ...);
+              - pattern-inside: |
+                  async function $H($CTX, ...) { ... }
+                  ...
+                  export { $H as getServerSideProps };
           - focus-metavariable: $CTX
       - patterns:
           - pattern-inside: |
@@ -321,7 +363,7 @@ rules:
               regex: ^(open|openSync|stat|statSync|lstat|lstatSync|access|accessSync|exists|existsSync|rename|renameSync|mkdir|mkdirSync|rmdir|rmdirSync|cp|cpSync|symlink|symlinkSync|link|linkSync|truncate|truncateSync|chmod|chmodSync|chown|chownSync)$
           - metavariable-regex:
               metavariable: $P
-              regex: ^(?!\(|async\b|function\b|[\w$]+\s*=>)
+              regex: ^(?!\([^()]*\)\s*(:[^=]+)?=>|async\b|function\b|[\w$]+\s*=>)
           - focus-metavariable: $P
 
   - id: nextjs-sql-injection
@@ -474,12 +516,31 @@ rules:
       - patterns:
           - pattern-either:
               - pattern: |
+                  redirect({..., $K: $U, ...}, ...)
+              - pattern: |
+                  permanentRedirect({..., $K: $U, ...}, ...)
+              - pattern: |
+                  $RES.redirect({..., $K: $U, ...}, ...)
+              - pattern: |
                   router.push({..., $K: $U, ...}, ...)
               - pattern: |
                   router.replace({..., $K: $U, ...}, ...)
           - metavariable-regex:
               metavariable: $K
-              regex: ^(pathname|host|hostname|protocol)$
+              regex: ^["']?(pathname|host|hostname|protocol|href)["']?$
+          - focus-metavariable: $U
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  redirect({..., ...$U, ...}, ...)
+              - pattern: |
+                  permanentRedirect({..., ...$U, ...}, ...)
+              - pattern: |
+                  $RES.redirect({..., ...$U, ...}, ...)
+              - pattern: |
+                  router.push({..., ...$U, ...}, ...)
+              - pattern: |
+                  router.replace({..., ...$U, ...}, ...)
           - focus-metavariable: $U
 
   - id: nextjs-rewrite
@@ -599,7 +660,7 @@ rules:
                       regex: ^(setTimeout|setInterval)$
                   - metavariable-regex:
                       metavariable: $C
-                      regex: ^(?!\(|async\b|function\b|[\w$]+\s*=>)
+                      regex: ^(?!\([^()]*\)\s*(:[^=]+)?=>|async\b|function\b|[\w$]+\s*=>)
           - focus-metavariable: $C
 
   - id: nextjs-xss
@@ -695,7 +756,14 @@ rules:
                   <$E href={{..., $K: $X, ...}}>...</$E>
           - metavariable-regex:
               metavariable: $K
-              regex: ^(pathname|host|hostname|protocol)$
+              regex: ^["']?(pathname|host|hostname|protocol|href)["']?$
+          - focus-metavariable: $X
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  <$E href={{..., ...$X, ...}} />
+              - pattern: |
+                  <$E href={{..., ...$X, ...}}>...</$E>
           - focus-metavariable: $X
       - patterns:
           - pattern-either:

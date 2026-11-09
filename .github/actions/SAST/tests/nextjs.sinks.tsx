@@ -108,6 +108,12 @@ export async function GET(req: NextRequest) {
   rm(u);
   // ruleid: nextjs-path-traversal
   anyFs.rm(u);
+  // ruleid: nextjs-path-traversal
+  fs.stat((BASE + u).trim(), () => {});
+  // ok: nextjs-path-traversal
+  fs.stat("x", (err) => { console.log(err, u); });
+  // ok: nextjs-path-traversal
+  fs.stat("x", function () { console.log(u); });
   // ok: nextjs-path-traversal
   fs.writeFile("x", u, () => {});
   // ok: nextjs-path-traversal
@@ -127,6 +133,8 @@ export async function GET(req: NextRequest) {
   setTimeout(u, 0);
   // ruleid: nextjs-code-injection
   setInterval(u, 1);
+  // ruleid: nextjs-code-injection
+  setTimeout((BASE + u).trim(), 0);
   // ruleid: nextjs-code-injection
   await import(u);
   // ruleid: nextjs-code-injection
@@ -191,6 +199,14 @@ export async function GET(req: NextRequest) {
   redirect(`https://${encodeURIComponent(u)}/x`);
   // ruleid: nextjs-open-redirect
   router.push({ pathname: u });
+  // ruleid: nextjs-open-redirect
+  redirect({ href: u, locale: "ja" });
+  // ruleid: nextjs-open-redirect
+  router.push({ "pathname": u });
+  // ruleid: nextjs-open-redirect
+  router.push({ ...u });
+  // ok: nextjs-open-redirect
+  redirect({ href: "/x", locale: u });
   // ok: nextjs-open-redirect
   redirect(`/x?r=${encodeURIComponent(u)}`);
   // ok: nextjs-open-redirect
@@ -246,6 +262,10 @@ export async function GET(req: NextRequest) {
   // ruleid: nextjs-xss-url
   const objectHost = <Link href={{ protocol: "https", host: u }}>x</Link>;
   // ruleid: nextjs-xss-url
+  const objectHref = <Link href={{ href: u }}>x</Link>;
+  // ruleid: nextjs-xss-url
+  const objectSpread = <Link href={{ ...u }}>x</Link>;
+  // ruleid: nextjs-xss-url
   const encodedHost = <a href={`https://${encodeURIComponent(u)}/x`}>x</a>;
   // ok: nextjs-xss-url
   const fixedPath = <a href={`/items/${u}`}>x</a>;
@@ -267,6 +287,8 @@ export async function GET(req: NextRequest) {
       {docPath}
       {objectPath}
       {objectHost}
+      {objectHref}
+      {objectSpread}
       {encodedHost}
       {fixedPath}
       {queryOnly}
