@@ -1,23 +1,19 @@
 #!/usr/bin/env bash
 # プロジェクト（カレントディレクトリ）の環境で ty を実行する。
 # 検査対象と厳しさは、このプロジェクトの ty.toml / [tool.ty] に委ねる
-# （位置引数を渡すと設定の include が無視される。mypy と同じく、workspace のメンバーの設定は読まれない）。
+# （位置引数を渡すと設定の include が無視される。workspace のメンバーの設定は読まれない）。
 # ty は、このディレクトリに設定が無ければ親ディレクトリの ty.toml / [tool.ty] を使うため、下で書き出す
 set -euo pipefail
 
 docs="https://docs.astral.sh/ty/reference/configuration/"
 # 別の uv.lock を持つ入れ子のプロジェクト（自分の matrix で検査される）。どれがどの uv.lock に属するかは python-targets が決める
 nested=$(jq -c --arg project "${PROJECT}" '.[$project] // []' <<< "${NESTED}")
-# 設定の有無は、pyproject.toml を TOML として読み（サブテーブル・ドット付きのキーなど、どの書き方でも拾う）、setup.cfg は見出しの行を探して判定する。
+# 設定の有無は、pyproject.toml を TOML として読んで判定する（サブテーブル・ドット付きのキーなど、どの書き方でも拾う）。
 # ランナーの Python（3.11 以上）で読む。-I: カレントディレクトリ（対象 repo）のモジュールを import しない。
 # 終了コード: 0 = ある、10 = 無い、それ以外 = 読めなかった
 has_tool() { # <pyproject.toml の [tool] の下の名前>
   [ -e pyproject.toml ] || return 10
   python3 -I -c 'import sys, tomllib; sys.exit(0 if sys.argv[1] in tomllib.load(open("pyproject.toml", "rb")).get("tool", {}) else 10)' "$1"
-}
-has_mypy_cfg() { # setup.cfg の [mypy] / [mypy-xxx]。configparser が読めない書き方（見出しの前の行など）でも拾えるよう、見出しの行を探す
-  [ -e setup.cfg ] || return 10
-  python3 -I -c 'import re, sys; sys.exit(0 if any(re.match(r"\s*\[mypy(-[^]]*)?\]", line) for line in open("setup.cfg", encoding="utf-8", errors="replace")) else 10)'
 }
 # 利用者の設定の src.include のうち、どのパスにも当てはまらない項目を JSON の配列で出す。
 # グロブの項目も Python の glob で確かめる（パスはこのディレクトリが基準。エスケープの \ を含む項目は見ない）
@@ -49,12 +45,6 @@ else
     echo "::warning::ty: pyproject.toml を読めませんでした。[tool.ty] があるか判定できないため、そのまま検査します"
   fi
   if [ "${ty_config}" -eq 10 ]; then
-    if [ -e pyrightconfig.json ] || has_tool pyright; then
-      echo "::warning::ty: Pyright の設定は使われません。検査対象や厳しさは pyproject.toml の [tool.ty] に移してください（${docs}）"
-    fi
-    if [ -e mypy.ini ] || [ -e .mypy.ini ] || has_tool mypy || has_mypy_cfg; then
-      echo "::warning::ty: mypy の設定は使われません。検査対象や厳しさは pyproject.toml の [tool.ty] に移してください（${docs}）"
-    fi
     # このプロジェクトの設定を書き出し、入れ子のプロジェクトを除く。パスはこのディレクトリが基準で、./ で始めてグロブの否定（!）と取り違えないようにし、
     # グロブの文字（[ ] * ? \）は \ でエスケープする。既定の除外（.venv・node_modules など）と .gitignore の除外は残る。
     # CLI の --exclude では親ディレクトリの設定が使われたままになるため、ファイルに書く。jq の JSON の文字列の配列は、TOML の配列としても読める
@@ -75,7 +65,7 @@ status=0
 # --output-format full: 入れ子の判定が読む「 --> パス」の行を、利用者の terminal.output-format に関わらず出させる。
 # 知らない設定・不正な値は ty が exit 2 で、知らないルール名は警告（既定で exit 1）で落とす
 uv run --no-sync "${ty}" check --no-progress --output-format full 2>&1 | tee "${log}" || status=$?
-# 以降の判定は、利用者の設定で何も検査しないまま通らないようにする（mypy も落ちていた）。
+# 以降の判定は、利用者の設定で何も検査しないまま通らないようにする。
 # 書き出した設定では、コードがすべて入れ子のプロジェクトにあり 0 件のことがあるため落とさない
 if [ "${status}" -eq 0 ] && [ "${generated}" = false ]; then
   # ty は include のパスが無くても何も出さず 0 で終わる
