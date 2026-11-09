@@ -58,15 +58,6 @@ rules:
       - pattern: Number(...)
       - pattern: parseInt(...)
       - pattern: parseFloat(...)
-      # 固定のパス (// で始まらず、連結もしない) をリクエストの URL に解決するだけなら、ホストを変えられない
-      - patterns:
-          - pattern: new URL($PATH, $BASE)
-          - metavariable-regex:
-              metavariable: $PATH
-              regex: ^("/([^/\\"][^"]*)?"|'/([^/\\'][^']*)?'|`/[^/`$\\][^`]*)$
-          - metavariable-regex:
-              metavariable: $BASE
-              regex: ^(req|request)\.(url|nextUrl(\.origin|\.href)?)$
     pattern-sinks:
       - patterns:
           - pattern-either:
@@ -77,10 +68,26 @@ rules:
               - pattern: ky($URL, ...)
               - pattern: request($URL, ...)
           - focus-metavariable: $URL
-          # 宛先のホストが固定の URL (パスだけが変わる) は SSRF にしない
+          # 宛先のホストが固定の URL (パスだけが変わる) は SSRF にしない。`${x}/ で始まるものは次の sink で x だけを見る
           - metavariable-regex:
               metavariable: $URL
-              regex: ^(?!`(https?://[^/$`]+/|\$\{[A-Z][A-Z0-9_]*\}/|\$\{process\.env\.\w+\}/))
+              regex: ^(?!`(https?://[^/$`]+/|\$\{[^}]+\}/))
+      - patterns:
+          - pattern-either:
+              - pattern: fetch($URL, ...)
+              - pattern: axios($URL, ...)
+              - pattern: axios.$METHOD($URL, ...)
+              - pattern: got($URL, ...)
+              - pattern: ky($URL, ...)
+              - pattern: request($URL, ...)
+          - metavariable-regex:
+              metavariable: $URL
+              regex: ^`\$\{[^}]+\}/
+          - metavariable-pattern:
+              metavariable: $URL
+              pattern: |
+                `${$HOST}...`
+          - focus-metavariable: $HOST
 
   - id: nextjs-path-traversal
     mode: taint

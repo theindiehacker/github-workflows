@@ -7,6 +7,7 @@ import { buildUrl } from "./build-url";
 import { db } from "./db";
 
 const API_BASE = "https://api.example.com";
+const apiBase = "https://api.example.com";
 const BASE = "/data";
 const schema = z.object({ url: z.string() });
 
@@ -35,6 +36,17 @@ export async function GET(req: NextRequest) {
   // ok: nextjs-ssrf
   await fetch(`${process.env.API_BASE}/users/${url}`);
   // ok: nextjs-ssrf
+  await fetch(`${apiBase}/users/${url}`);
+  // ok: nextjs-ssrf
+  await fetch(new URL("/api/x", process.env.API_BASE));
+  const TARGET = url;
+  // ruleid: nextjs-ssrf
+  await fetch(`${TARGET}/x`);
+  // ruleid: nextjs-ssrf
+  await fetch(`${buildUrl(url)}/x`);
+  // ruleid: nextjs-ssrf
+  await fetch(`${API_BASE}${url}`);
+  // ruleid: nextjs-ssrf
   await fetch(new URL("/api/x", req.url));
   // ruleid: nextjs-ssrf
   await fetch(new URL(`/${url}`, req.url));
