@@ -1,0 +1,19 @@
+name: "🛡️ 静的アプリケーションセキュリティテスト(SAST)"
+description: "digest 固定の semgrep/semgrep イメージを docker run し、severity ERROR の検出で失敗する"
+
+inputs:
+  version:
+    description: "semgrep/semgrep イメージのタグ"
+    required: true
+  digest:
+    description: "semgrep/semgrep イメージの digest (sha256:...)"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: "Semgrep"
+      shell: bash
+      env:
+        IMAGE: semgrep/semgrep:${{ inputs.version }}@${{ inputs.digest }}
+      run: bash "${GITHUB_ACTION_PATH}/semgrep.sh"

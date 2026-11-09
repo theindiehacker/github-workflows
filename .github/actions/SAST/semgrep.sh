@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # アプリケーションコードを Semgrep CE（SAST, ルールセット p/default・severity ERROR のみ）でスキャンする。
-# --baseline-commit により「PR で新規に増えた検出」のみを対象とするため、既存コードの検出が無関係な PR をブロックすることはない
 set -euo pipefail
 
-# コンテナは root で動くため、runner が checkout した作業ツリーを git に信頼させる（--baseline-commit が git を使う）。
+# コンテナは root で動くため、runner が checkout した作業ツリーを git に信頼させる
 # --disable-nosem: インライン nosemgrep コメントを無効化（抑制は .semgrepignore に限定する）
 docker run --rm \
   --volume "${GITHUB_WORKSPACE}:/src" --workdir /src \
@@ -16,5 +15,4 @@ docker run --rm \
   --metrics off \
   --disable-version-check \
   --disable-nosem \
-  --baseline-commit "${BASELINE}" \
   .
