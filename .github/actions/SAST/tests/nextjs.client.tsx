@@ -2,6 +2,23 @@
 
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 
+export const publicEnv = {
+  // ruleid: nextjs-public-env-secret
+  stripe: process.env.NEXT_PUBLIC_STRIPE_SECRET_KEY,
+  // ruleid: nextjs-public-env-secret
+  supabase: process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY,
+  // ruleid: nextjs-public-env-secret
+  github: process.env["NEXT_PUBLIC_GITHUB_TOKEN"],
+  // ok: nextjs-public-env-secret
+  publishable: process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
+  // ok: nextjs-public-env-secret
+  privateBeta: process.env.NEXT_PUBLIC_IS_PRIVATE_BETA,
+  // ok: nextjs-public-env-secret
+  tokenUrl: process.env.NEXT_PUBLIC_OAUTH_TOKEN_URL,
+  // ok: nextjs-public-env-secret
+  server: process.env.STRIPE_SECRET_KEY,
+};
+
 export function Client() {
   const sp = useSearchParams();
   const router = useRouter();

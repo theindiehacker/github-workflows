@@ -108,3 +108,94 @@ rules:
       - metavariable-regex:
           metavariable: $B
           regex: ^(?![A-Z][A-Z0-9_]*$)
+
+  - id: python-html-response-xss
+    mode: taint
+    languages: [python]
+    severity: ERROR
+    message: 関数の引数が、エスケープされずに HTMLResponse の HTML に入っています (XSS)。html.escape でエスケープするか、autoescape を有効にした Jinja2 のテンプレートで描画してください。
+    metadata:
+      category: security
+      technology: [fastapi, starlette]
+      cwe: "CWE-79: Improper Neutralization of Input During Web Page Generation"
+      confidence: MEDIUM
+    pattern-sources: &params
+      # backend は層ごとにファイルが分かれ、リクエストの値かを見分けられないため、関数の引数をすべて入口とみなす
+      # def のパターンは async def にも一致する
+      - patterns:
+          - pattern-inside: |
+              def $F(..., $P, ...):
+                  ...
+          - focus-metavariable: $P
+          - metavariable-regex:
+              metavariable: $P
+              regex: ^(?!(self|cls)$)
+    pattern-sanitizers:
+      - pattern: html.escape(...)
+      - pattern: escape(...)
+      - pattern: markupsafe.escape(...)
+      - pattern: Markup.escape(...)
+      - pattern: bleach.clean(...)
+      - pattern: nh3.clean(...)
+      - pattern: int(...)
+      - pattern: float(...)
+      # Environment のテンプレートは autoescape でエスケープされる。jinja2.Template は既定で autoescape しない
+      - patterns:
+          - pattern: $T.render(...)
+          - pattern-not: jinja2.Template(...).render(...)
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: HTMLResponse($C, ...)
+              - pattern: HTMLResponse(..., content=$C, ...)
+          - focus-metavariable: $C
+
+  - id: python-jinja2-ssti
+    mode: taint
+    languages: [python]
+    severity: ERROR
+    message: 関数の引数を、Jinja2 のテンプレートとして描画しています (テンプレートインジェクション)。{{ ... }} を渡されると、サーバーでコードを実行されます。利用者の入力は、テンプレートではなく render() の値として渡してください。
+    metadata:
+      category: security
+      technology: [jinja2]
+      cwe: "CWE-1336: Improper Neutralization of Special Elements Used in a Template Engine"
+      confidence: MEDIUM
+    pattern-sources: *params
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: jinja2.Template($S, ...)
+              - patterns:
+                  - pattern: $E.from_string($S, ...)
+                  # サンドボックスは、テンプレートからの危険な操作を止める
+                  - pattern-not: SandboxedEnvironment(...).from_string(...)
+                  - pattern-not-inside: |
+                      $E = SandboxedEnvironment(...)
+                      ...
+          - focus-metavariable: $S
+
+  - id: python-sqlalchemy-exec-driver-sql
+    mode: taint
+    languages: [python]
+    severity: ERROR
+    message: 文字列を組み立てた SQL を exec_driver_sql に渡しています (SQL インジェクション)。値はバインドパラメータ (2 つ目の引数) で渡してください。
+    metadata:
+      category: security
+      technology: [sqlalchemy]
+      cwe: "CWE-89: Improper Neutralization of Special Elements used in an SQL Command"
+      confidence: MEDIUM
+    # text() は r/all の avoid-sqlalchemy-text が同じ考え方で検査する
+    pattern-sources:
+      - pattern: f"..."
+      - pattern: |
+          "..." + $X
+      - pattern: |
+          $X + "..."
+      - pattern: |
+          "...".format(...)
+      - pattern: |
+          "..." % $X
+    pattern-sinks:
+      - patterns:
+          - pattern: $C.exec_driver_sql($S, ...)
+          - focus-metavariable: $S

@@ -385,3 +385,21 @@ rules:
               regex: ^["'`]https?://\*\*([/:"'`]|$)
       - pattern: |
           {..., dangerouslyAllowLocalIP: true, ...}
+
+  - id: nextjs-public-env-secret
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: NEXT_PUBLIC_ で始まる環境変数は、ビルド時にブラウザ向けの JS に埋め込まれ、誰でも読めます。秘密の値は NEXT_PUBLIC_ を付けない名前にし、サーバーだけで読んでください。
+    metadata:
+      category: security
+      technology: [nextjs]
+      cwe: "CWE-540: Inclusion of Sensitive Information in Source Code"
+      confidence: MEDIUM
+    patterns:
+      - pattern-either:
+          - pattern: process.env.$NAME
+          - pattern: process.env["$NAME"]
+      # 秘密の値を表す語で終わる名前 (NEXT_PUBLIC_IS_PRIVATE_BETA や NEXT_PUBLIC_OAUTH_TOKEN_URL は除く)
+      - metavariable-regex:
+          metavariable: $NAME
+          regex: ^NEXT_PUBLIC_(\w+_)?(SECRET|SECRET_KEY|PRIVATE_KEY|PASSWORD|PASSWD|CREDENTIALS?|SERVICE_ROLE|SERVICE_ROLE_KEY|TOKEN|ACCESS_KEY)$
