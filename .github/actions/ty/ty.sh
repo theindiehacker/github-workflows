@@ -45,10 +45,11 @@ else
     echo "::warning::ty: pyproject.toml を読めませんでした。[tool.ty] があるか判定できないため、そのまま検査します"
   fi
   if [ "${ty_config}" -eq 10 ]; then
-    # このプロジェクトの設定を書き出し、入れ子のプロジェクトを除く。パスはこのディレクトリが基準で、./ で始めてグロブの否定（!）と取り違えないようにし、
-    # グロブの文字（[ ] * ? \）は \ でエスケープする。既定の除外（.venv・node_modules など）と .gitignore の除外は残る。
+    # このプロジェクトの設定を書き出し、入れ子のプロジェクトを除く。パスはこのディレクトリが基準で、./ で始める。
+    # 英数字と / . _ - 以外は \ でエスケープする（ty はグロブの文字のほか、{ ! , などもそのままでは受け付けない。\ を含む名前は ty が受け付けない）。
+    # 既定の除外（.venv・node_modules など）と .gitignore の除外は残る。
     # CLI の --exclude では親ディレクトリの設定が使われたままになるため、ファイルに書く。jq の JSON の文字列の配列は、TOML の配列としても読める
-    jq -rn --argjson nested "${nested}" '"[src]\nexclude = " + ($nested | map("./" + gsub("(?<c>[\\[\\]*?\\\\])"; "\\\(.c)") + "/") | tojson)' > ty.toml
+    jq -rn --argjson nested "${nested}" '"[src]\nexclude = " + ($nested | map("./" + gsub("(?<c>[^A-Za-z0-9/._-])"; "\\\(.c)") + "/") | tojson)' > ty.toml
     generated=true
   fi
 fi
@@ -63,7 +64,7 @@ log=$(mktemp)
 status=0
 # 0 件の警告は標準エラーに出るため、ログに入れる。--no-progress: 進捗の表示をログに残さない。
 # --output-format full: 入れ子の判定が読む「 --> パス」の行を、利用者の terminal.output-format に関わらず出させる。
-# 知らない設定・不正な値は ty が exit 2 で、知らないルール名は警告（既定で exit 1）で落とす
+# 知らない設定・不正な値は ty が exit 2 で落とす
 uv run --no-sync "${ty}" check --no-progress --output-format full 2>&1 | tee "${log}" || status=$?
 # 以降の判定は、利用者の設定で何も検査しないまま通らないようにする。
 # 書き出した設定では、コードがすべて入れ子のプロジェクトにあり 0 件のことがあるため落とさない
@@ -80,6 +81,11 @@ if [ "${status}" -eq 0 ] && [ "${generated}" = false ]; then
     echo "::error::ty: ${config} の src.include / src.exclude に当てはまる Python ファイルがありません。検査されないファイルが出ないよう直してください（${docs}）"
     exit 1
   fi
+  # 知らないルール名は警告になり、terminal.error-on-warning = false では 0 で終わる
+  if grep -q '^warning\[unknown-rule\]' "${log}"; then
+    echo "::error::ty: ${config} の rules に知らないルール名があります。上の unknown-rule の警告を確かめて直してください（${docs}）"
+    exit 1
+  fi
 fi
 case "${status}" in
   0) ;;
@@ -90,13 +96,18 @@ case "${status}" in
       keep="（設定を書くときは、入れ子のプロジェクト $(join_escaped "${nested}") も src.exclude に入れてください）"
     fi
     echo "::error::ty: 型エラーと警告を直してください。検査から外すディレクトリ（scripts/ など）は ${config} の src.include / src.exclude で、ルールの厳しさは rules で変えられます${keep}（${docs}）"
-    # 入れ子のプロジェクトのファイルに指摘があれば、このプロジェクトの環境で検査されている（除外できていない）。
-    # 指摘の場所は「 --> <カレントディレクトリからのパス>:<行>:<列>」の行に出る（行番号の桁数で字下げが変わる）
-    unchecked=$(jq -c --rawfile log "${log}" '[.[] | select(. as $dir | $log | split("\n") | any(sub("^ +"; "") | startswith("--> " + $dir + "/")))]' <<< "${nested}")
-    if [ "${unchecked}" != "[]" ]; then
-      echo "::error::ty: 入れ子のプロジェクト（$(join_escaped "${unchecked}")）が、このプロジェクトの環境で検査されています。${config} の src.exclude に入れてください（それぞれ自分の環境で検査されます）"
-    fi
     ;;
-  *) echo "::error::ty: 型チェックを実行できませんでした（exit ${status}）。上のエラーと、${config} の書き方を確かめてください（${docs}）" ;;
+  *)
+    echo "::error::ty: 型チェックを実行できませんでした（exit ${status}）。上のエラーと、${config} の書き方を確かめてください（${docs}）"
+    exit "${status}"
+    ;;
 esac
+# 入れ子のプロジェクトのファイルに指摘があれば、このプロジェクトの環境で検査されている（除外できていない）。
+# error-on-warning = false で警告だけのとき（exit 0）も見る。
+# 指摘の場所は「 --> <カレントディレクトリからのパス>:<行>:<列>」の行に出る（行番号の桁数で字下げが変わる）
+unchecked=$(jq -c --rawfile log "${log}" '[.[] | select(. as $dir | $log | split("\n") | any(sub("^ +"; "") | startswith("--> " + $dir + "/")))]' <<< "${nested}")
+if [ "${unchecked}" != "[]" ]; then
+  echo "::error::ty: 入れ子のプロジェクト（$(join_escaped "${unchecked}")）が、このプロジェクトの環境で検査されています。${config} の src.exclude に入れてください（それぞれ自分の環境で検査されます）"
+  status=1
+fi
 exit "${status}"
