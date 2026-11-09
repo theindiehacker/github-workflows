@@ -99,7 +99,7 @@ terraform -chdir=terraform/github apply
 | Gitleaks | PR のコミットに混入したシークレット（圧縮ファイルの中も含む） |
 | ghalint | ワークフローのセキュリティポリシー（permissions 未設定・action の SHA 未固定など）。ワークフローを変更したときだけ |
 | zizmor | GitHub Actions の設定の脆弱性（severity HIGH 以上）。ワークフロー・action 定義などを変更したときだけ |
-| Semgrep | アプリケーションコード（ルールセット `p/default`・severity ERROR）。repo 全体を検査するため、既存の検出も直すか `.semgrepignore` で抑制するまで失敗する |
+| Semgrep | アプリケーションコード（ルールセット `r/all`・severity ERROR。全 repo で外すルールは `semgrep.sh` の `--exclude-rule`）。repo 全体を検査するため、既存の検出も直すか `.semgrepignore` で抑制するまで失敗する |
 | Trivy | 依存パッケージの脆弱性と IaC の設定ミス（MEDIUM 以上・修正版があるもの）、Dockerfile からビルドしたイメージの脆弱性。Renovate の PR は報告だけで失敗しない |
 
 ### ✏️ スタイルチェック
