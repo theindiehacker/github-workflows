@@ -61,6 +61,16 @@ export default async function Page({
   const dirty = <div dangerouslySetInnerHTML={{ __html: q }} />;
   // ruleid: nextjs-xss
   const encoded = <div dangerouslySetInnerHTML={{ __html: encodeURIComponent(q) }} />;
+  const jsonLd = { "@context": "https://schema.org", name: q };
+  // ruleid: nextjs-xss
+  const ld = <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />;
+  const safeLd = (
+    <script
+      type="application/ld+json"
+      // ok: nextjs-xss
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }}
+    />
+  );
 
   return (
     <>
@@ -69,6 +79,8 @@ export default async function Page({
       {clean}
       {dirty}
       {encoded}
+      {ld}
+      {safeLd}
     </>
   );
 }
@@ -78,3 +90,14 @@ export async function deleteItem(id: string) {
   // ruleid: nextjs-sql-injection
   await db.query(`DELETE FROM items WHERE id = ${id}`);
 }
+
+export const removeItem = async (id: string) => {
+  "use server";
+  // ruleid: nextjs-sql-injection
+  await db.query(`DELETE FROM items WHERE id = ${id}`);
+};
+
+export const findItem = async (id: string) => {
+  // ok: nextjs-sql-injection
+  return db.query(`SELECT * FROM items WHERE id = ${id}`);
+};

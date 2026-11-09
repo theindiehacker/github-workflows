@@ -1,0 +1,110 @@
+rules:
+  - id: python-cors-credentials-any-origin
+    languages: [python]
+    severity: ERROR
+    message: どのサイトにも、Cookie 付きのリクエストと応答の読み取りを許しています (CORS)。Starlette はこの設定だと、届いた Origin をそのまま許可します。allow_origins に自サイトのオリジンだけを並べてください。
+    metadata:
+      category: security
+      technology: [fastapi, starlette]
+      cwe: "CWE-942: Permissive Cross-domain Policy with Untrusted Domains"
+      confidence: HIGH
+    patterns:
+      - pattern-either:
+          - pattern: $APP.add_middleware(CORSMiddleware, ..., allow_credentials=True, ...)
+          - pattern: Middleware(CORSMiddleware, ..., allow_credentials=True, ...)
+      - pattern-either:
+          - pattern: $APP.add_middleware(CORSMiddleware, ..., allow_origins=[..., "*", ...], ...)
+          - pattern: Middleware(CORSMiddleware, ..., allow_origins=[..., "*", ...], ...)
+          - patterns:
+              - pattern-either:
+                  - pattern: $APP.add_middleware(CORSMiddleware, ..., allow_origin_regex=$R, ...)
+                  - pattern: Middleware(CORSMiddleware, ..., allow_origin_regex=$R, ...)
+              # .*・^https://.*$ など、どのオリジンにも一致する正規表現
+              - metavariable-regex:
+                  metavariable: $R
+                  regex: ^[rRuU]?["'](\^)?(https?\??://|\(https?\)://)?\.[*+]\$?["']$
+
+  - id: python-zip-slip
+    mode: taint
+    languages: [python]
+    severity: ERROR
+    message: アーカイブの中の名前で、ファイルを書いています (Zip Slip)。../ を含む名前だと置き場の外に書かれます。extractall を使うか、resolve() した先が置き場の中かを is_relative_to で確かめてください。
+    metadata:
+      category: security
+      technology: [python]
+      cwe: "CWE-22: Improper Limitation of a Pathname to a Restricted Directory"
+      confidence: HIGH
+    pattern-sources:
+      - pattern: $A.namelist()
+      - pattern: $A.infolist()
+      - pattern: $A.getnames()
+      - pattern: $A.getmembers()
+    pattern-sanitizers:
+      - pattern: os.path.basename(...)
+      - pattern: Path(...).name
+      - pattern: PurePath(...).name
+      # 置き場の中かを確かめた後のパスは、置き場の外を指さない
+      - by-side-effect: true
+        patterns:
+          - pattern-either:
+              - pattern: $T.is_relative_to(...)
+              - pattern: $T.resolve().is_relative_to(...)
+              - pattern: $T.relative_to(...)
+              - pattern: $T.resolve().relative_to(...)
+          - focus-metavariable: $T
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: open($P, ...)
+              - pattern: $P.open(...)
+              - pattern: $P.write_bytes(...)
+              - pattern: $P.write_text(...)
+              - pattern: $P.mkdir(...)
+              - pattern: $P.touch(...)
+              - pattern: os.makedirs($P, ...)
+              - pattern: os.mkdir($P, ...)
+              - pattern: shutil.copy($SRC, $P, ...)
+              - pattern: shutil.copyfile($SRC, $P, ...)
+              - pattern: shutil.move($SRC, $P, ...)
+          - focus-metavariable: $P
+
+  - id: python-mass-assignment
+    languages: [python]
+    severity: ERROR
+    message: 受け取った項目を、すべてそのまま属性に入れています (一括代入)。role などの項目を混ぜられると、権限を上げられます。入れてよい項目を Pydantic のモデルか許可リストで絞ってください。
+    metadata:
+      category: security
+      technology: [python]
+      cwe: "CWE-915: Improperly Controlled Modification of Dynamically-Determined Object Attributes"
+      confidence: MEDIUM
+    patterns:
+      - pattern-either:
+          - patterns:
+              - pattern-inside: |
+                  for $K, $V in $B.items():
+                      ...
+              - pattern: setattr($O, $K, $V)
+          - patterns:
+              - pattern-inside: |
+                  for $K in $B:
+                      ...
+              - pattern: setattr($O, $K, $B[$K])
+      # Pydantic のモデルは、モデルにある項目しか持たない
+      - pattern-not-inside: |
+          for $K, $V in $M.model_dump(...).items():
+              ...
+      - pattern-not-inside: |
+          for $K, $V in $M.dict(...).items():
+              ...
+      # 許可リストで絞っている
+      - pattern-not-inside: |
+          if $K in $ALLOWED:
+              ...
+      - pattern-not-inside: |
+          if $K not in $ALLOWED:
+              continue
+          ...
+      # 定数 (DEFAULTS など) を回すのは、受け取った値ではない
+      - metavariable-regex:
+          metavariable: $B
+          regex: ^(?![A-Z][A-Z0-9_]*$)
