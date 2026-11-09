@@ -19,15 +19,16 @@ has_mypy_cfg() { # setup.cfg の [mypy] / [mypy-xxx]。configparser が読めな
   [ -e setup.cfg ] || return 10
   python3 -I -c 'import re, sys; sys.exit(0 if any(re.match(r"\s*\[mypy(-[^]]*)?\]", line) for line in open("setup.cfg", encoding="utf-8", errors="replace")) else 10)'
 }
-# 利用者の設定の src.include のうち、グロブ（* ? [ \ と否定の !）を含まない項目で、存在しないパスを JSON の配列で出す
+# 利用者の設定の src.include のうち、どのパスにも当てはまらない項目を JSON の配列で出す。
+# グロブの項目も Python の glob で確かめる（パスはこのディレクトリが基準。エスケープの \ を含む項目は見ない）
 missing_include() {
   python3 -I -c '
-import json, os, tomllib
+import glob, json, os, tomllib
 if os.path.exists("ty.toml"):
     src = tomllib.load(open("ty.toml", "rb")).get("src", {})
 else:
     src = tomllib.load(open("pyproject.toml", "rb")).get("tool", {}).get("ty", {}).get("src", {})
-print(json.dumps([p for p in src.get("include", []) if not p.startswith("!") and not any(c in p for c in "*?[\\") and not os.path.exists(p.removeprefix("./").rstrip("/") or ".")]))
+print(json.dumps([p for p in src.get("include", []) if "\\" not in p and not glob.glob(p.removeprefix("./") or ".", recursive=True, include_hidden=True)]))
 '
 }
 # 対象 repo 由来のパスの一覧を、ワークフローコマンドに埋め込めるようエスケープして , でつなぐ
@@ -54,9 +55,10 @@ else
     if [ -e mypy.ini ] || [ -e .mypy.ini ] || has_tool mypy || has_mypy_cfg; then
       echo "::warning::ty: mypy の設定は使われません。検査対象や厳しさは pyproject.toml の [tool.ty] に移してください（${docs}）"
     fi
-    # このプロジェクトの設定を書き出し、入れ子のプロジェクトを除く。パスはこのディレクトリが基準で、./ で始めてグロブの否定（!）と取り違えないようにする。
-    # 既定の除外（.venv・node_modules など）と .gitignore の除外は残る。jq の JSON の文字列の配列は、TOML の配列としても読める
-    jq -rn --argjson nested "${nested}" '"[src]\nexclude = " + ($nested | map("./" + . + "/") | tojson)' > ty.toml
+    # このプロジェクトの設定を書き出し、入れ子のプロジェクトを除く。パスはこのディレクトリが基準で、./ で始めてグロブの否定（!）と取り違えないようにし、
+    # グロブの文字（[ ] * ? \）は \ でエスケープする。既定の除外（.venv・node_modules など）と .gitignore の除外は残る。
+    # CLI の --exclude では親ディレクトリの設定が使われたままになるため、ファイルに書く。jq の JSON の文字列の配列は、TOML の配列としても読める
+    jq -rn --argjson nested "${nested}" '"[src]\nexclude = " + ($nested | map("./" + gsub("(?<c>[\\[\\]*?\\\\])"; "\\\(.c)") + "/") | tojson)' > ty.toml
     generated=true
   fi
 fi
@@ -79,7 +81,7 @@ if [ "${status}" -eq 0 ] && [ "${generated}" = false ]; then
   # ty は include のパスが無くても何も出さず 0 で終わる
   missing=$(missing_include) || { echo "::warning::ty: ${config} を読めず、include のパスがあるか確かめられませんでした"; missing="[]"; }
   if [ "${missing}" != "[]" ]; then
-    echo "::error::ty: ${config} の src.include に存在しないパス（$(join_escaped "${missing}")）があります。検査されないファイルが出ないよう直してください（${docs}）"
+    echo "::error::ty: ${config} の src.include に、どのパスにも当てはまらない項目（$(join_escaped "${missing}")）があります。検査されないファイルが出ないよう直してください（${docs}）"
     exit 1
   fi
   # include の項目ごとの 0 件（ほかの項目にファイルがある）は、項目ごとの一覧が要るため見ない。
