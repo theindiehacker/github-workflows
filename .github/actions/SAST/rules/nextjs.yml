@@ -269,7 +269,7 @@ rules:
                       regex: ^(node:)?fs(/promises)?$
           - metavariable-regex:
               metavariable: $F
-              regex: ^(open|openSync|stat|statSync|lstat|lstatSync|access|accessSync|exists|existsSync|rename|renameSync|mkdir|mkdirSync|rmdir|rmdirSync|cp|cpSync)$
+              regex: ^(open|opendir|stat|lstat|access|exists|rename|mkdir|rmdir|cp|truncate)(Sync)?$
           - metavariable-regex:
               metavariable: $P
               regex: ^(?!\([^()]*\)\s*(:[^=]+)?=>|async\b|function\b|[\w$]+\s*=>)
@@ -474,9 +474,13 @@ rules:
                       metavariable: $F
                       regex: ^(execSync|execFile|execFileSync|spawn|spawnSync)$
           - focus-metavariable: $C
+      # shell が false 以外だと、コマンドも引数もつないでシェルが解釈する
       - patterns:
-          - pattern: |
-              $F($X, $C, {..., shell: $SHELL, ...})
+          - pattern-either:
+              - pattern: |
+                  $F($X, $C, {..., shell: $SHELL, ...}, ...)
+              - pattern: |
+                  $NS.$F($X, $C, {..., shell: $SHELL, ...}, ...)
           - metavariable-regex:
               metavariable: $F
               regex: ^(spawn|spawnSync|execFile|execFileSync)$
@@ -484,15 +488,19 @@ rules:
               metavariable: $SHELL
               regex: ^(?!false$)
           - focus-metavariable: $C
+      # sh -c に渡した文字列は、シェルのコマンドとして解釈される
       - patterns:
-          - pattern: |
-              $F($SH, [..., "-c", $C, ...], ...)
+          - pattern-either:
+              - pattern: |
+                  $F($SH, [..., "-c", $C, ...], ...)
+              - pattern: |
+                  $NS.$F($SH, [..., "-c", $C, ...], ...)
           - metavariable-regex:
               metavariable: $F
               regex: ^(spawn|spawnSync|execFile|execFileSync)$
           - metavariable-regex:
               metavariable: $SH
-              regex: ^["'`](/bin/|/usr/bin/)?(ba|z)?sh["'`]$
+              regex: ^["'`](/bin/|/usr/bin/)?(sh|bash|zsh|dash)["'`]$
           - focus-metavariable: $C
 
   - id: nextjs-code-injection
@@ -517,11 +525,15 @@ rules:
               - pattern: new Function(..., $C)
               - pattern: require($C)
               - pattern: import($C)
+              - pattern: new vm.Script($C, ...)
+              - pattern: runInNewContext($C, ...)
+              - pattern: runInThisContext($C, ...)
+              - pattern: runInContext($C, ...)
               - patterns:
                   - pattern: vm.$M($C, ...)
                   - metavariable-regex:
                       metavariable: $M
-                      regex: ^(runInNewContext|runInThisContext|runInContext)$
+                      regex: ^(runInNewContext|runInThisContext|runInContext|compileFunction)$
           - focus-metavariable: $C
 
   - id: nextjs-xss
@@ -541,6 +553,10 @@ rules:
       - pattern: parseFloat(...)
       - pattern: DOMPurify.sanitize(...)
       - pattern: sanitizeHtml(...)
+      # < をすべて置き換えると、タグを作れない (Next.js の JSON-LD の書き方: JSON.stringify(x).replace(/</g, "\\u003c"))
+      - pattern: $S.replace(/</g, ...)
+      - pattern: $S.replaceAll("<", ...)
+      - pattern: $S.replaceAll(/</g, ...)
     pattern-sinks:
       - patterns:
           - pattern-either:
@@ -622,3 +638,46 @@ rules:
               metavariable: $E
               regex: ^(iframe|script|Script)$
           - focus-metavariable: $X
+
+  - id: nextjs-image-any-host
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: next/image のサーバーが、どのホストの画像でも取りに行きます (SSRF)。images.remotePatterns は必要なホストだけにし、dangerouslyAllowLocalIP は使わないでください。
+    metadata:
+      category: security
+      technology: [nextjs]
+      cwe: "CWE-918: Server-Side Request Forgery (SSRF)"
+      confidence: HIGH
+    pattern-either:
+      - patterns:
+          - pattern-inside: |
+              {..., remotePatterns: [...], ...}
+          - pattern: |
+              {..., hostname: "**", ...}
+      - patterns:
+          - pattern-inside: |
+              {..., remotePatterns: [...], ...}
+          - pattern: new URL($U)
+          - metavariable-regex:
+              metavariable: $U
+              regex: ^["'`]https?://\*\*([/:"'`]|$)
+      - pattern: |
+          {..., dangerouslyAllowLocalIP: true, ...}
+
+  - id: nextjs-public-env-secret
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: NEXT_PUBLIC_ で始まる環境変数は、ビルド時にブラウザ向けの JS に埋め込まれ、誰でも読めます。秘密の値は NEXT_PUBLIC_ を付けない名前にし、サーバーだけで読んでください。
+    metadata:
+      category: security
+      technology: [nextjs]
+      cwe: "CWE-540: Inclusion of Sensitive Information in Source Code"
+      confidence: MEDIUM
+    patterns:
+      - pattern-either:
+          - pattern: process.env.$NAME
+          - pattern: process.env["$NAME"]
+      # 秘密の値を表す語で終わる名前 (NEXT_PUBLIC_IS_PRIVATE_BETA や NEXT_PUBLIC_OAUTH_TOKEN_URL は除く)
+      - metavariable-regex:
+          metavariable: $NAME
+          regex: ^NEXT_PUBLIC_(\w+_)?(SECRET|SECRET_KEY|PRIVATE_KEY|PASSWORD|PASSWD|CREDENTIALS?|SERVICE_ROLE|SERVICE_ROLE_KEY|TOKEN|ACCESS_KEY)$

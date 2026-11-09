@@ -1,9 +1,12 @@
-import { exec, execFile, execSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { exec, execFile, execSync, spawn } from "node:child_process";
+import fs from "node:fs";
+import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import vm from "node:vm";
 import { cookies as readCookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { access } from "./acl";
 import { buildUrl } from "./build-url";
 import { db } from "./db";
 
@@ -72,6 +75,16 @@ export async function GET(req: NextRequest) {
   // ok: nextjs-path-traversal
   await readFile("/data/fixed.txt");
   // ruleid: nextjs-path-traversal
+  await readdir(path.join(BASE, q.get("dir")!));
+  // ruleid: nextjs-path-traversal
+  await stat(q.get("file")!);
+  // ruleid: nextjs-path-traversal
+  fs.mkdirSync(q.get("dir")!);
+  // ok: nextjs-path-traversal
+  await readdir(path.join(BASE, path.basename(q.get("dir")!)));
+  // ok: nextjs-path-traversal
+  await access(q.get("role")!);
+  // ruleid: nextjs-path-traversal
   await readFile(`/data/${encodeURIComponent(q.get("file")!)}`);
 
   // ruleid: nextjs-sql-injection
@@ -129,6 +142,16 @@ export async function POST(req: NextRequest) {
   execSync(`ls ${dir}`);
   // ok: nextjs-command-injection
   execFile("ls", [dir]);
+  // ruleid: nextjs-command-injection
+  spawn("sh", ["-c", `ls ${dir}`]);
+  // ruleid: nextjs-command-injection
+  spawn(`ls ${dir}`, { shell: true });
+  // ruleid: nextjs-command-injection
+  execFile("ls", [dir], { shell: true });
+  // ok: nextjs-command-injection
+  spawn("ls", [dir]);
+  // ok: nextjs-command-injection
+  spawn("sh", ["-c", "ls"]);
   // ok: nextjs-command-injection
   exec("ls");
   // ok: nextjs-command-injection
@@ -144,6 +167,12 @@ export async function POST(req: NextRequest) {
   new Function("return 1", code);
   // ok: nextjs-code-injection
   eval("1 + 1");
+  // ruleid: nextjs-code-injection
+  vm.runInNewContext(code);
+  // ruleid: nextjs-code-injection
+  new vm.Script(body.code);
+  // ok: nextjs-code-injection
+  vm.runInNewContext("1 + 1");
   // ruleid: nextjs-code-injection
   eval(encodeURIComponent(code));
 
@@ -171,4 +200,18 @@ export async function helper(value: string) {
 async function localFetch(value: string) {
   // todoruleid: nextjs-ssrf
   return fetch(value);
+}
+
+export function middleware(req: NextRequest) {
+  const target = req.nextUrl.searchParams.get("target");
+  if (!target) {
+    // ok: nextjs-rewrite
+    return NextResponse.rewrite(new URL(`/en${req.nextUrl.pathname}`, req.url));
+  }
+  if (target === "maintenance") {
+    // ok: nextjs-rewrite
+    return NextResponse.rewrite(new URL("/maintenance", req.url));
+  }
+  // ruleid: nextjs-rewrite
+  return NextResponse.rewrite(new URL(target));
 }

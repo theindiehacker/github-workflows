@@ -11,7 +11,7 @@ docker run --rm \
   "${IMAGE}" \
   semgrep scan \
   --config r/all \
-  --config /rules/nextjs.yml \
+  --config /rules \
   --severity ERROR \
   --exclude-rule ajinabraham.njsscan.generic.hardcoded_secrets.node_api_key \
   --exclude-rule ajinabraham.njsscan.generic.hardcoded_secrets.node_secret \
