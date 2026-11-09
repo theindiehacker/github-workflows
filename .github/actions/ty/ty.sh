@@ -70,8 +70,9 @@ ty="$(uv tool dir --bin)/ty"
 log=$(mktemp)
 status=0
 # 0 件の警告は標準エラーに出るため、ログに入れる。--no-progress: 進捗の表示をログに残さない。
+# --output-format full: 入れ子の判定が読む「 --> パス」の行を、利用者の terminal.output-format に関わらず出させる。
 # 知らない設定・不正な値は ty が exit 2 で、知らないルール名は警告（既定で exit 1）で落とす
-uv run --no-sync "${ty}" check --no-progress 2>&1 | tee "${log}" || status=$?
+uv run --no-sync "${ty}" check --no-progress --output-format full 2>&1 | tee "${log}" || status=$?
 # 以降の判定は、利用者の設定で何も検査しないまま通らないようにする（mypy も落ちていた）。
 # 書き出した設定では、コードがすべて入れ子のプロジェクトにあり 0 件のことがあるため落とさない
 if [ "${status}" -eq 0 ] && [ "${generated}" = false ]; then

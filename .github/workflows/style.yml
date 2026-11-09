@@ -97,6 +97,10 @@ jobs:
             python:
               - "**/*.py"
               - "**/*.pyi"
+              # ty と ruff はノートブックも検査し、.gitignore / .ignore に従って検査するファイルを決める
+              - "**/*.ipynb"
+              - "**/.gitignore"
+              - "**/.ignore"
               - "**/ruff.toml"
               - "**/.ruff.toml"
               - "**/pyproject.toml"
