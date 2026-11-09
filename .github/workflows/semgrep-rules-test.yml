@@ -1,17 +1,17 @@
-name: "🧪 SAST のルールのテスト"
+name: "🧪 Semgrep のルールのテスト"
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
-      - ".github/actions/SAST/rules/**"
-      - ".github/actions/SAST/tests/**"
-      - ".github/workflows/sast-rules-test.yml"
+      - ".github/actions/semgrep/rules/**"
+      - ".github/actions/semgrep/tests/**"
+      - ".github/workflows/semgrep-rules-test.yml"
 
 permissions: {}
 
 concurrency:
-  group: github-workflows-sast-rules-test-${{ github.event.pull_request.number }}
+  group: github-workflows-semgrep-rules-test-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
@@ -30,7 +30,7 @@ jobs:
       - name: "semgrep scan --test"
         shell: bash
         env:
-          # security.yml の SAST と同じ版にする
+          # security.yml の Semgrep と同じ版にする
           # renovate: datasource=docker depName=semgrep/semgrep
           version: 1.183.0
           digest: sha256:2e45517a85e13a9cca14a2a00df6bb48affd66b8ebfae1b0991cd57578362fb0
@@ -41,5 +41,5 @@ jobs:
             semgrep scan --test \
             --metrics off \
             --disable-version-check \
-            --config .github/actions/SAST/rules \
-            .github/actions/SAST/tests
+            --config .github/actions/semgrep/rules \
+            .github/actions/semgrep/tests

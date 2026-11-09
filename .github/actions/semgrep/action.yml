@@ -1,4 +1,4 @@
-name: "🛡️ 静的アプリケーションセキュリティテスト(SAST)"
+name: "Semgrep でアプリケーションコードをスキャン (SAST)"
 description: "digest 固定の semgrep/semgrep イメージを docker run し、severity ERROR の検出で失敗する"
 
 inputs:

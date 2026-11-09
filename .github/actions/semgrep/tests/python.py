@@ -1,4 +1,4 @@
-# SAST の自作ルールの検体。検知させたい書き方を意図して書くため、ruff の指摘は行ごとに noqa で外す。
+# Semgrep の自作ルールの検体。検知させたい書き方を意図して書くため、ruff の指摘は行ごとに noqa で外す。
 # S608 は CI の --select S でだけ有効になり、既定の ruff check はその noqa を不要 (RUF100) とするため、RUF100 も並べる
 import contextlib
 import html
