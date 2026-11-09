@@ -1,0 +1,38 @@
+name: "ty で型チェック"
+description: >-
+  プロジェクト（uv.lock のあるディレクトリ）の環境で ty を実行する。検査対象と厳しさはプロジェクトの設定に委ね、
+  設定が無ければ入れ子のプロジェクトを除いた設定を書き出す（uv と依存関係は事前に導入しておく）
+
+inputs:
+  version:
+    description: "ty（PyPI）の版"
+    required: true
+  project:
+    description: "検査するプロジェクトのディレクトリ"
+    required: true
+  nested:
+    description: "python-targets の出力 nested"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # 導入の失敗を型エラー（exit 1）と取り違えないよう、検査と分ける
+    - name: "ty を導入"
+      shell: bash
+      env:
+        TY_VERSION: ${{ inputs.version }}
+      run: |
+        if ! uv tool install --quiet "ty==${TY_VERSION}"; then
+          echo "::error::ty: ty ${TY_VERSION} を導入できませんでした。上の uv のエラーを確かめてください"
+          exit 1
+        fi
+
+    # -I: カレントディレクトリ（対象 repo）のモジュールを import しない
+    - name: "ty"
+      shell: bash
+      working-directory: ${{ inputs.project }}
+      env:
+        PROJECT: ${{ inputs.project }}
+        NESTED: ${{ inputs.nested }}
+      run: python3 -I "${GITHUB_ACTION_PATH}/ty.py"
