@@ -439,15 +439,25 @@ rules:
     pattern-sinks:
       - patterns:
           - pattern: NextResponse.rewrite($U, ...)
-          # リクエストの URL を写し、パスやクエリだけを変えたものは、ホストが変わらない (ホストを変える代入は下の sink で見る)
+          # リクエスト (req・request) の URL を写し、パスやクエリだけを変えたものは、ホストが変わらない。
+          # 写した後にホストを変える代入・再代入・Object.assign は、下の sink で見る
           - pattern-not-inside: |
-              $U = $R.nextUrl.clone();
+              $U = req.nextUrl.clone();
               ...
           - pattern-not-inside: |
-              $U = new URL($R.url);
+              $U = request.nextUrl.clone();
               ...
           - pattern-not-inside: |
-              $U = new URL($R.nextUrl);
+              $U = new URL(req.url);
+              ...
+          - pattern-not-inside: |
+              $U = new URL(request.url);
+              ...
+          - pattern-not-inside: |
+              $U = new URL(req.nextUrl);
+              ...
+          - pattern-not-inside: |
+              $U = new URL(request.nextUrl);
               ...
           - focus-metavariable: $U
       - patterns:
@@ -461,12 +471,21 @@ rules:
               - pattern-inside: |
                   $U = new URL($R.nextUrl);
                   ...
+          - metavariable-regex:
+              metavariable: $R
+              regex: ^(req|request)$
           - pattern-either:
               - pattern: $U.host = $X
               - pattern: $U.hostname = $X
               - pattern: $U.href = $X
               - pattern: $U.protocol = $X
               - pattern: $U.port = $X
+              - pattern: Object.assign($U, ..., $X, ...)
+              - patterns:
+                  - pattern: $U = $X
+                  - pattern-not: $U = $R.nextUrl.clone()
+                  - pattern-not: $U = new URL($R.url)
+                  - pattern-not: $U = new URL($R.nextUrl)
           - focus-metavariable: $X
 
   - id: nextjs-command-injection

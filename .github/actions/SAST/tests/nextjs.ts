@@ -224,6 +224,30 @@ export function middleware(req: NextRequest) {
     // ok: nextjs-rewrite
     return NextResponse.rewrite(url);
   }
+  if (target === "body") {
+    const data = { url: target };
+    const url = new URL(data.url);
+    // ruleid: nextjs-rewrite
+    return NextResponse.rewrite(url);
+  }
+  if (target === "reassign") {
+    let url = req.nextUrl.clone();
+    // ruleid: nextjs-rewrite
+    url = new URL(target);
+    return NextResponse.rewrite(url);
+  }
+  if (target === "assign") {
+    const url = req.nextUrl.clone();
+    // ruleid: nextjs-rewrite
+    Object.assign(url, { host: target });
+    return NextResponse.rewrite(url);
+  }
+  if (target === "assign-path") {
+    const url = req.nextUrl.clone();
+    Object.assign(url, { pathname: "/login" });
+    // ok: nextjs-rewrite
+    return NextResponse.rewrite(url);
+  }
   if (target.startsWith("proxy")) {
     const url = req.nextUrl.clone();
     // ruleid: nextjs-rewrite
