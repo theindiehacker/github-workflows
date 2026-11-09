@@ -17,11 +17,22 @@ inputs:
 runs:
   using: composite
   steps:
+    # 導入の失敗を型エラー（exit 1）と取り違えないよう、検査と分ける
+    - name: "ty を導入"
+      shell: bash
+      env:
+        TY_VERSION: ${{ inputs.version }}
+      run: |
+        if ! uv tool install --quiet "ty==${TY_VERSION}"; then
+          echo "::error::ty: ty ${TY_VERSION} を導入できませんでした。上の uv のエラーを確かめてください"
+          exit 1
+        fi
+
+    # -I: カレントディレクトリ（対象 repo）のモジュールを import しない
     - name: "ty"
       shell: bash
       working-directory: ${{ inputs.project }}
       env:
-        TY_VERSION: ${{ inputs.version }}
         PROJECT: ${{ inputs.project }}
         NESTED: ${{ inputs.nested }}
-      run: bash "${GITHUB_ACTION_PATH}/ty.sh"
+      run: python3 -I "${GITHUB_ACTION_PATH}/ty.py"
