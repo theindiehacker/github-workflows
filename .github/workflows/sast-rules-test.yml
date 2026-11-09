@@ -1,0 +1,45 @@
+name: "🧪 SAST のルールのテスト"
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - ".github/actions/SAST/rules/**"
+      - ".github/actions/SAST/tests/**"
+      - ".github/workflows/sast-rules-test.yml"
+
+permissions: {}
+
+concurrency:
+  group: github-workflows-sast-rules-test-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: "自作ルールの検出をテスト"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: "semgrep scan --test"
+        shell: bash
+        env:
+          # security.yml の SAST と同じ版にする
+          # renovate: datasource=docker depName=semgrep/semgrep
+          version: 1.183.0
+          digest: sha256:2e45517a85e13a9cca14a2a00df6bb48affd66b8ebfae1b0991cd57578362fb0
+        run: |
+          docker run --rm \
+            --volume "${GITHUB_WORKSPACE}:/src" --workdir /src \
+            "semgrep/semgrep:${version}@${digest}" \
+            semgrep scan --test \
+            --metrics off \
+            --disable-version-check \
+            --config .github/actions/SAST/rules \
+            .github/actions/SAST/tests

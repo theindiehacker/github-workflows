@@ -1,0 +1,247 @@
+rules:
+  - id: nextjs-ssrf
+    mode: taint
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: リクエストの値が外部通信の宛先になっています (SSRF)。宛先を許可リストで検証してください。
+    metadata:
+      category: security
+      technology: [nextjs]
+      cwe: "CWE-918: Server-Side Request Forgery (SSRF)"
+      confidence: MEDIUM
+    pattern-sources: &sources
+      - patterns:
+          - pattern-either:
+              - pattern-inside: |
+                  export async function $M($REQ, ...) { ... }
+              - pattern-inside: |
+                  export function $M($REQ, ...) { ... }
+              - pattern-inside: |
+                  export const $M = async ($REQ, ...) => { ... }
+              - pattern-inside: |
+                  export const $M = ($REQ, ...) => { ... }
+          - metavariable-regex:
+              metavariable: $M
+              regex: ^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|middleware|proxy)$
+          - focus-metavariable: $REQ
+      - patterns:
+          - pattern-either:
+              - pattern-inside: |
+                  export async function $M(...) { ... }
+              - pattern-inside: |
+                  export default async function $M(...) { ... }
+              - pattern-inside: |
+                  export default function $M(...) { ... }
+          - pattern-either:
+              - pattern: searchParams
+              - pattern: params
+      - patterns:
+          - pattern-inside: |
+              "use server";
+              ...
+          - pattern-either:
+              - pattern-inside: |
+                  export async function $F(..., $P, ...) { ... }
+              - pattern-inside: |
+                  async function $F(..., $P, ...) { ... }
+              - pattern-inside: |
+                  export const $F = async (..., $P, ...) => { ... }
+          - focus-metavariable: $P
+      - patterns:
+          - pattern-inside: |
+              async function $F(..., $P, ...) { "use server"; ... }
+          - focus-metavariable: $P
+      - pattern: headers()
+      - pattern: cookies()
+      - pattern: useSearchParams()
+    pattern-sanitizers: &sanitizers
+      - pattern: encodeURIComponent(...)
+      - pattern: Number(...)
+      - pattern: parseInt(...)
+      - pattern: parseFloat(...)
+      - pattern: path.basename(...)
+      - pattern: basename(...)
+      - pattern: DOMPurify.sanitize(...)
+      - pattern: sanitizeHtml(...)
+      # 固定のパスを基準の URL に解決するだけなので、宛先を変えられない
+      - patterns:
+          - pattern: new URL($PATH, ...)
+          - metavariable-regex:
+              metavariable: $PATH
+              regex: ^["'`]/
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: fetch($URL, ...)
+              - pattern: axios($URL, ...)
+              - pattern: axios.$METHOD($URL, ...)
+              - pattern: got($URL, ...)
+              - pattern: ky($URL, ...)
+              - pattern: request($URL, ...)
+          - focus-metavariable: $URL
+          # 宛先のホストが固定の URL (パスだけが変わる) は SSRF にしない
+          - metavariable-regex:
+              metavariable: $URL
+              regex: ^(?!`https?://[^/$`]+/)
+
+  - id: nextjs-path-traversal
+    mode: taint
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: リクエストの値がファイルパスに使われています (パストラバーサル)。path.basename や許可リストで検証してください。
+    metadata:
+      category: security
+      technology: [nextjs]
+      cwe: "CWE-22: Improper Limitation of a Pathname to a Restricted Directory"
+      confidence: MEDIUM
+    pattern-sources: *sources
+    pattern-sanitizers: *sanitizers
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: readFile($P, ...)
+              - pattern: readFileSync($P, ...)
+              - pattern: writeFile($P, ...)
+              - pattern: writeFileSync($P, ...)
+              - pattern: createReadStream($P, ...)
+              - pattern: createWriteStream($P, ...)
+              - pattern: unlink($P, ...)
+              - pattern: rm($P, ...)
+              - pattern: $FS.readFile($P, ...)
+              - pattern: $FS.readFileSync($P, ...)
+              - pattern: $FS.writeFile($P, ...)
+              - pattern: $FS.writeFileSync($P, ...)
+              - pattern: $FS.createReadStream($P, ...)
+              - pattern: $FS.createWriteStream($P, ...)
+              - pattern: $FS.unlink($P, ...)
+              - pattern: $FS.rm($P, ...)
+          - focus-metavariable: $P
+
+  - id: nextjs-sql-injection
+    mode: taint
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: リクエストの値が SQL の文字列に入っています (SQL インジェクション)。プレースホルダを使ってください。
+    metadata:
+      category: security
+      technology: [nextjs]
+      cwe: "CWE-89: Improper Neutralization of Special Elements used in an SQL Command"
+      confidence: MEDIUM
+    pattern-sources: *sources
+    pattern-sanitizers: *sanitizers
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: $DB.query($S, ...)
+              - pattern: $DB.execute($S, ...)
+              - pattern: $DB.raw($S, ...)
+              - pattern: $DB.unsafe($S, ...)
+              - pattern: $DB.$queryRawUnsafe($S, ...)
+              - pattern: $DB.$executeRawUnsafe($S, ...)
+          - focus-metavariable: $S
+          # オブジェクトを渡す API (GraphQL など) は SQL にしない
+          - metavariable-regex:
+              metavariable: $S
+              regex: ^[^{]
+
+  - id: nextjs-open-redirect
+    mode: taint
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: リクエストの値がリダイレクト先になっています (オープンリダイレクト)。同じサイト内のパスであることを検証してください。
+    metadata:
+      category: security
+      technology: [nextjs]
+      cwe: "CWE-601: URL Redirection to Untrusted Site"
+      confidence: MEDIUM
+    pattern-sources: *sources
+    pattern-sanitizers:
+      - pattern: encodeURIComponent(...)
+      - pattern: Number(...)
+      - pattern: parseInt(...)
+      - pattern: parseFloat(...)
+      - patterns:
+          - pattern: new URL($PATH, ...)
+          - metavariable-regex:
+              metavariable: $PATH
+              regex: ^["'`]/
+      # 固定のパスで始まるテンプレートは、サイトの外へ飛ばせない (// と /${x} は除く)
+      - patterns:
+          - pattern: $T
+          - metavariable-regex:
+              metavariable: $T
+              regex: ^`/[^/`$\\]
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: redirect($U, ...)
+              - pattern: permanentRedirect($U, ...)
+              - pattern: NextResponse.redirect($U, ...)
+              - pattern: Response.redirect($U, ...)
+              - pattern: router.push($U, ...)
+              - pattern: router.replace($U, ...)
+              - pattern: window.location.assign($U)
+              - pattern: window.location.replace($U)
+              - pattern: window.location.href = $U
+          - focus-metavariable: $U
+
+  - id: nextjs-command-injection
+    mode: taint
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: リクエストの値がシェルのコマンドに入っています (コマンドインジェクション)。execFile で引数を分けて渡してください。
+    metadata:
+      category: security
+      technology: [nextjs]
+      cwe: "CWE-78: Improper Neutralization of Special Elements used in an OS Command"
+      confidence: HIGH
+    pattern-sources: *sources
+    pattern-sanitizers: *sanitizers
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: exec($C, ...)
+              - pattern: execSync($C, ...)
+              - pattern: child_process.exec($C, ...)
+              - pattern: child_process.execSync($C, ...)
+          - focus-metavariable: $C
+
+  - id: nextjs-code-injection
+    mode: taint
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: リクエストの値がコードとして実行されます (コードインジェクション)。eval や new Function を使わないでください。
+    metadata:
+      category: security
+      technology: [nextjs]
+      cwe: "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"
+      confidence: HIGH
+    pattern-sources: *sources
+    pattern-sanitizers: *sanitizers
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: eval($C)
+              - pattern: new Function(..., $C)
+          - focus-metavariable: $C
+
+  - id: nextjs-xss
+    mode: taint
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: リクエストの値がエスケープされずに HTML になります (XSS)。DOMPurify などでサニタイズしてください。
+    metadata:
+      category: security
+      technology: [nextjs]
+      cwe: "CWE-79: Improper Neutralization of Input During Web Page Generation"
+      confidence: HIGH
+    pattern-sources: *sources
+    pattern-sanitizers: *sanitizers
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  <$E dangerouslySetInnerHTML={{__html: $X}} />
+              - pattern: |
+                  <$E dangerouslySetInnerHTML={{__html: $X}}>...</$E>
+          - focus-metavariable: $X
