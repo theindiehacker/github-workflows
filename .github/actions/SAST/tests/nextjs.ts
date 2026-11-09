@@ -1,6 +1,7 @@
 import { exec, execFile, execSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { cookies as readCookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { buildUrl } from "./build-url";
@@ -93,6 +94,9 @@ export async function GET(req: NextRequest) {
   await db.query(`SELECT * FROM t WHERE a = '${encodeURIComponent(q.get("a")!)}'`);
   // ruleid: nextjs-sql-injection
   await db.query(`SELECT * FROM t WHERE a = '${path.basename(q.get("a")!)}'`);
+  const renamed = (await readCookies()).get("t")?.value;
+  // todoruleid: nextjs-sql-injection
+  await db.query(`SELECT * FROM t WHERE a = '${renamed}'`);
 
   // ok: nextjs-open-redirect
   NextResponse.redirect(new URL("/login", req.url));
