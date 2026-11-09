@@ -64,6 +64,20 @@ export default async function Page({
   const jsonLd = { "@context": "https://schema.org", name: q };
   // ruleid: nextjs-xss
   const ld = <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />;
+  const brokenLd = (
+    <script
+      type="application/ld+json"
+      // ruleid: nextjs-xss
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "<") }}
+    />
+  );
+  const entityLd = (
+    <script
+      type="application/ld+json"
+      // ok: nextjs-xss
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replaceAll("<", "&lt;") }}
+    />
+  );
   const safeLd = (
     <script
       type="application/ld+json"
@@ -81,6 +95,8 @@ export default async function Page({
       {encoded}
       {ld}
       {safeLd}
+      {brokenLd}
+      {entityLd}
     </>
   );
 }

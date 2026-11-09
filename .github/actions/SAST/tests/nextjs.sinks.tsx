@@ -61,6 +61,14 @@ export async function GET(req: NextRequest) {
   // ruleid: nextjs-command-injection
   spawn("sh", ["-c", u]);
   // ruleid: nextjs-command-injection
+  spawn("bash", ["-lc", u]);
+  // ruleid: nextjs-command-injection
+  spawn("bash", ["-e", "-c", u]);
+  // ruleid: nextjs-command-injection
+  spawn(u, { shell: "/bin/bash" });
+  // ok: nextjs-command-injection
+  spawn("bash", ["-l", "script.sh", u]);
+  // ruleid: nextjs-command-injection
   spawn(u);
   // ruleid: nextjs-command-injection
   execFile(u, []);

@@ -8,7 +8,15 @@ export const publicEnv = {
   // ruleid: nextjs-public-env-secret
   supabase: process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY,
   // ruleid: nextjs-public-env-secret
-  github: process.env["NEXT_PUBLIC_GITHUB_TOKEN"],
+  sentry: process.env["NEXT_PUBLIC_SENTRY_AUTH_TOKEN"],
+  // ruleid: nextjs-public-env-secret
+  aws: process.env.NEXT_PUBLIC_AWS_SECRET_ACCESS_KEY,
+  // ok: nextjs-public-env-secret
+  mapbox: process.env.NEXT_PUBLIC_MAPBOX_TOKEN,
+  // ok: nextjs-public-env-secret
+  mapboxAccess: process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN,
+  // ok: nextjs-public-env-secret
+  datadog: process.env.NEXT_PUBLIC_DATADOG_CLIENT_TOKEN,
   // ok: nextjs-public-env-secret
   publishable: process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
   // ok: nextjs-public-env-secret

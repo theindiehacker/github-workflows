@@ -9,11 +9,15 @@ from string import Template as StringTemplate
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, Template
 from jinja2.sandbox import SandboxedEnvironment
+from markdown_it import MarkdownIt
 from starlette.middleware import Middleware
 
 app = FastAPI()
+ORIGINS = ["*"]
+TRUSTED_ORIGINS = ["https://app.example"]
 
 # ruleid: python-cors-credentials-any-origin
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True)
@@ -43,6 +47,14 @@ middleware = [
         allow_credentials=True,
     )
 ]
+
+# ruleid: python-cors-credentials-any-origin
+app.add_middleware(CORSMiddleware, allow_origins=ORIGINS, allow_credentials=True)
+
+# ok: python-cors-credentials-any-origin
+app.add_middleware(
+    CORSMiddleware, allow_origins=TRUSTED_ORIGINS, allow_credentials=True
+)
 
 # ok: python-cors-credentials-any-origin
 app.add_middleware(CORSMiddleware, allow_origins=["*"])
@@ -231,3 +243,80 @@ def find_user_bound(conn, name: str):
 def ping(conn):
     # ok: python-sqlalchemy-exec-driver-sql
     return conn.exec_driver_sql("SELECT 1")
+
+
+def unzip_lexical_check(archive: Path, dest: Path) -> None:
+    with zipfile.ZipFile(archive) as zf:
+        for name in zf.namelist():
+            # is_relative_to は文字列で比べるだけで、../ を畳まない
+            target = dest / name
+            if not target.is_relative_to(dest):
+                raise ValueError(name)
+            # ruleid: python-zip-slip
+            target.write_bytes(zf.read(name))
+
+
+def unzip_resolved_check(archive: Path, dest: Path) -> None:
+    with zipfile.ZipFile(archive) as zf:
+        for name in zf.namelist():
+            target = dest / name
+            if not target.resolve().is_relative_to(dest.resolve()):
+                raise ValueError(name)
+            # ok: python-zip-slip
+            target.write_bytes(zf.read(name))
+
+
+plain_env = Environment()  # noqa: S701, RUF100
+md = MarkdownIt()
+templates = Jinja2Templates(directory="templates")
+
+
+def search_page_plain_env(name: str) -> HTMLResponse:
+    # ruleid: python-html-response-xss
+    return HTMLResponse(plain_env.from_string("<p>{{ n }}</p>").render(n=name))
+
+
+def search_page_markdown(text: str) -> HTMLResponse:
+    # ruleid: python-html-response-xss
+    return HTMLResponse(md.render(text))
+
+
+def search_page_templates(q: str) -> HTMLResponse:
+    # ok: python-html-response-xss
+    return HTMLResponse(templates.get_template("search.html").render(q=q))
+
+
+def update_columns(user, payload: dict) -> None:
+    for key, value in payload.items():
+        if key in user.__table__.columns:
+            # ruleid: python-mass-assignment
+            setattr(user, key, value)
+
+
+def update_present(user, payload: dict) -> None:
+    for key, value in payload.items():
+        if key in payload:
+            # ruleid: python-mass-assignment
+            setattr(user, key, value)
+
+
+def update_literal(user, payload: dict) -> None:
+    for key, value in payload.items():
+        if key in {"name", "bio"}:
+            # ok: python-mass-assignment
+            setattr(user, key, value)
+
+
+def find_user_augmented(conn, uid: str):
+    sql = "SELECT * FROM users WHERE id = "
+    sql += uid
+    # ruleid: python-sqlalchemy-exec-driver-sql
+    return conn.exec_driver_sql(sql)
+
+
+def find_users(conn, active: bool):
+    sql = "SELECT * FROM users"
+    if active:
+        sql += " WHERE active"
+    # ok: python-sqlalchemy-exec-driver-sql
+    return conn.exec_driver_sql(sql)

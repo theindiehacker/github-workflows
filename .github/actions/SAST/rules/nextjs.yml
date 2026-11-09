@@ -439,7 +439,35 @@ rules:
     pattern-sinks:
       - patterns:
           - pattern: NextResponse.rewrite($U, ...)
+          # リクエストの URL を写し、パスやクエリだけを変えたものは、ホストが変わらない (ホストを変える代入は下の sink で見る)
+          - pattern-not-inside: |
+              $U = $R.nextUrl.clone();
+              ...
+          - pattern-not-inside: |
+              $U = new URL($R.url);
+              ...
+          - pattern-not-inside: |
+              $U = new URL($R.nextUrl);
+              ...
           - focus-metavariable: $U
+      - patterns:
+          - pattern-either:
+              - pattern-inside: |
+                  $U = $R.nextUrl.clone();
+                  ...
+              - pattern-inside: |
+                  $U = new URL($R.url);
+                  ...
+              - pattern-inside: |
+                  $U = new URL($R.nextUrl);
+                  ...
+          - pattern-either:
+              - pattern: $U.host = $X
+              - pattern: $U.hostname = $X
+              - pattern: $U.href = $X
+              - pattern: $U.protocol = $X
+              - pattern: $U.port = $X
+          - focus-metavariable: $X
 
   - id: nextjs-command-injection
     mode: taint
@@ -488,13 +516,16 @@ rules:
               metavariable: $SHELL
               regex: ^(?!false$)
           - focus-metavariable: $C
-      # sh -c に渡した文字列は、シェルのコマンドとして解釈される
+      # sh -c (-lc・-ec なども) に渡した文字列は、シェルのコマンドとして解釈される
       - patterns:
           - pattern-either:
               - pattern: |
-                  $F($SH, [..., "-c", $C, ...], ...)
+                  $F($SH, [..., $FLAG, $C, ...], ...)
               - pattern: |
-                  $NS.$F($SH, [..., "-c", $C, ...], ...)
+                  $NS.$F($SH, [..., $FLAG, $C, ...], ...)
+          - metavariable-regex:
+              metavariable: $FLAG
+              regex: ^["'`]-[a-zA-Z]*c[a-zA-Z]*["'`]$
           - metavariable-regex:
               metavariable: $F
               regex: ^(spawn|spawnSync|execFile|execFileSync)$
@@ -553,10 +584,15 @@ rules:
       - pattern: parseFloat(...)
       - pattern: DOMPurify.sanitize(...)
       - pattern: sanitizeHtml(...)
-      # < をすべて置き換えると、タグを作れない (Next.js の JSON-LD の書き方: JSON.stringify(x).replace(/</g, "\\u003c"))
-      - pattern: $S.replace(/</g, ...)
-      - pattern: $S.replaceAll("<", ...)
-      - pattern: $S.replaceAll(/</g, ...)
+      # < をすべてエスケープした形に置き換えると、タグを作れない (Next.js の JSON-LD の書き方: JSON.stringify(x).replace(/</g, "\\u003c"))
+      - patterns:
+          - pattern-either:
+              - pattern: $S.replace(/</g, $R)
+              - pattern: $S.replaceAll("<", $R)
+              - pattern: $S.replaceAll(/</g, $R)
+          - metavariable-regex:
+              metavariable: $R
+              regex: (?i)^["'`](\\\\u003c|\\\\x3c|&lt;|&#0*60;|&#x0*3c;)["'`]$
     pattern-sinks:
       - patterns:
           - pattern-either:
@@ -677,7 +713,8 @@ rules:
       - pattern-either:
           - pattern: process.env.$NAME
           - pattern: process.env["$NAME"]
-      # 秘密の値を表す語で終わる名前 (NEXT_PUBLIC_IS_PRIVATE_BETA や NEXT_PUBLIC_OAUTH_TOKEN_URL は除く)
+      # 秘密の値を表す語で終わる名前 (NEXT_PUBLIC_IS_PRIVATE_BETA や NEXT_PUBLIC_OAUTH_TOKEN_URL は除く)。
+      # TOKEN・ACCESS_KEY だけでは見ない。Mapbox や Datadog のように、ブラウザで使う前提で公開するトークンがあるため
       - metavariable-regex:
           metavariable: $NAME
-          regex: ^NEXT_PUBLIC_(\w+_)?(SECRET|SECRET_KEY|PRIVATE_KEY|PASSWORD|PASSWD|CREDENTIALS?|SERVICE_ROLE|SERVICE_ROLE_KEY|TOKEN|ACCESS_KEY)$
+          regex: ^NEXT_PUBLIC_(\w+_)?(SECRET|SECRET_KEY|SECRET_ACCESS_KEY|SECRET_TOKEN|AUTH_TOKEN|REFRESH_TOKEN|PRIVATE_KEY|PASSWORD|PASSWD|CREDENTIALS?|SERVICE_ROLE|SERVICE_ROLE_KEY)$
