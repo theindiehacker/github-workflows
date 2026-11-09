@@ -1,4 +1,5 @@
-import { execFile, exec as execCb, spawn } from "node:child_process";
+import child_process, { execFile, exec as execCb, spawn } from "node:child_process";
+import cp from "node:child_process";
 import fs from "node:fs";
 import { stat } from "node:fs/promises";
 import http from "node:http";
@@ -34,6 +35,10 @@ export async function GET(req: NextRequest) {
   await axios.post(u, {});
   // ruleid: nextjs-ssrf
   got.stream(u);
+  // ruleid: nextjs-ssrf
+  await axios.postForm(u, {});
+  // ruleid: nextjs-ssrf
+  axios.create({ baseURL: u });
   // ok: nextjs-ssrf
   await axios.post("https://api.example.com/x", { u });
 
@@ -43,6 +48,8 @@ export async function GET(req: NextRequest) {
   NextResponse.rewrite(new URL(u));
   // ruleid: nextjs-rewrite
   NextResponse.rewrite(new URL(u, req.url));
+  // ruleid: nextjs-rewrite
+  NextResponse.rewrite(`https://${encodeURIComponent(u)}/x`);
   // ok: nextjs-rewrite
   NextResponse.rewrite(new URL("/maintenance", req.url));
   // ok: nextjs-rewrite
@@ -60,6 +67,16 @@ export async function GET(req: NextRequest) {
   execFile(u, []);
   // ruleid: nextjs-command-injection
   execAsync(`ls ${u}`);
+  // ruleid: nextjs-command-injection
+  child_process.spawn("ls", [u], { shell: true });
+  // ruleid: nextjs-command-injection
+  cp.spawn("sh", ["-c", u]);
+  // ruleid: nextjs-command-injection
+  spawn("ls", [u], { shell: "/bin/bash" });
+  // ruleid: nextjs-command-injection
+  spawn("bash", ["-lc", u]);
+  // ok: nextjs-command-injection
+  spawn("ls", [u], { shell: false });
   // ok: nextjs-command-injection
   spawn("ls", [u]);
   // ok: nextjs-command-injection
@@ -81,6 +98,16 @@ export async function GET(req: NextRequest) {
   fs.stat(u, () => {});
   // ruleid: nextjs-path-traversal
   await stat(u);
+  // ruleid: nextjs-path-traversal
+  fs.rename("x", u, () => {});
+  // ruleid: nextjs-path-traversal
+  fs.cp("x", u, () => {});
+  // ruleid: nextjs-path-traversal
+  fs.symlink("x", u, () => {});
+  // ruleid: nextjs-path-traversal
+  rm(u);
+  // ruleid: nextjs-path-traversal
+  anyFs.rm(u);
   // ok: nextjs-path-traversal
   fs.writeFile("x", u, () => {});
   // ok: nextjs-path-traversal
@@ -160,6 +187,14 @@ export async function GET(req: NextRequest) {
   new Response(null, { status: 302, headers: { Location: u } });
   // ruleid: nextjs-open-redirect
   headers.set("Location", u);
+  // ruleid: nextjs-open-redirect
+  redirect(`https://${encodeURIComponent(u)}/x`);
+  // ruleid: nextjs-open-redirect
+  router.push({ pathname: u });
+  // ok: nextjs-open-redirect
+  redirect(`/x?r=${encodeURIComponent(u)}`);
+  // ok: nextjs-open-redirect
+  router.push({ pathname: "/x", query: { u } });
   // ok: nextjs-open-redirect
   location.href = "/x";
   // ok: nextjs-open-redirect
@@ -189,6 +224,10 @@ export async function GET(req: NextRequest) {
   const props = { dangerouslySetInnerHTML: { __html: u } };
   // ruleid: nextjs-xss
   const inTemplate = <div dangerouslySetInnerHTML={{ __html: `<b>${u}</b>` }} />;
+  // ruleid: nextjs-xss
+  const doc = <iframe srcDoc={u} />;
+  // ruleid: nextjs-xss
+  const docPath = <iframe srcDoc={`/x${u}`} />;
   // ok: nextjs-xss
   new Response(u, { headers: { "Content-Type": "text/plain" } });
   // ok: nextjs-xss
@@ -203,7 +242,11 @@ export async function GET(req: NextRequest) {
   // ruleid: nextjs-xss-url
   const frame = <iframe src={u} />;
   // ruleid: nextjs-xss-url
-  const doc = <iframe srcDoc={u} />;
+  const objectPath = <Link href={{ pathname: u }}>x</Link>;
+  // ruleid: nextjs-xss-url
+  const objectHost = <Link href={{ protocol: "https", host: u }}>x</Link>;
+  // ruleid: nextjs-xss-url
+  const encodedHost = <a href={`https://${encodeURIComponent(u)}/x`}>x</a>;
   // ok: nextjs-xss-url
   const fixedPath = <a href={`/items/${u}`}>x</a>;
   // ok: nextjs-xss-url
@@ -221,6 +264,10 @@ export async function GET(req: NextRequest) {
       {link}
       {frame}
       {doc}
+      {docPath}
+      {objectPath}
+      {objectHost}
+      {encodedHost}
       {fixedPath}
       {queryOnly}
       {objectHref}

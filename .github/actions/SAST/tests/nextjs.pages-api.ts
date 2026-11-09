@@ -12,6 +12,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   res.redirect(String(req.query.next));
   // ruleid: nextjs-open-redirect
   res.redirect(302, String(req.query.next));
+  // ruleid: nextjs-open-redirect
+  res.setHeader("Location", String(req.query.next));
+  // ruleid: nextjs-open-redirect
+  res.writeHead(302, { Location: String(req.query.next) });
+  // ok: nextjs-open-redirect
+  res.setHeader("X-Foo", String(req.query.a));
+  // ok: nextjs-open-redirect
+  res.writeHead(200, { "X-Foo": String(req.query.a) });
   // ok: nextjs-open-redirect
   res.redirect("/login");
 }

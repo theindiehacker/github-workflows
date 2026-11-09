@@ -126,6 +126,34 @@ rules:
                   export default async ($REQ, $RES, ...) => { ... }
               - pattern-inside: |
                   export default ($REQ, $RES, ...) => { ... }
+              - pattern-inside: |
+                  export default $WRAP(async ($REQ, $RES, ...) => { ... }, ...)
+              - pattern-inside: |
+                  export default $WRAP(($REQ, $RES, ...) => { ... }, ...)
+              - pattern-inside: |
+                  export default $WRAP(async function ($REQ, $RES, ...) { ... }, ...)
+              - pattern-inside: |
+                  export default $WRAP(function ($REQ, $RES, ...) { ... }, ...)
+              - pattern-inside: |
+                  async function $H($REQ, $RES, ...) { ... }
+                  ...
+                  export default $WRAP($H, ...);
+              - pattern-inside: |
+                  function $H($REQ, $RES, ...) { ... }
+                  ...
+                  export default $WRAP($H, ...);
+              - pattern-inside: |
+                  const $H = async ($REQ, $RES, ...) => { ... };
+                  ...
+                  export default $WRAP($H, ...);
+              - pattern-inside: |
+                  async function $H($REQ, $RES, ...) { ... }
+                  ...
+                  export default $H;
+              - pattern-inside: |
+                  const $H = async ($REQ, $RES, ...) => { ... };
+                  ...
+                  export default $H;
           - pattern-either:
               - pattern: $REQ.query
               - pattern: $REQ.body
@@ -137,6 +165,10 @@ rules:
                   export async function getServerSideProps($CTX, ...) { ... }
               - pattern-inside: |
                   export const getServerSideProps = async ($CTX, ...) => { ... }
+              - pattern-inside: |
+                  export const getServerSideProps = $WRAP(async ($CTX, ...) => { ... }, ...)
+              - pattern-inside: |
+                  export const getServerSideProps = $WRAP(async function ($CTX, ...) { ... }, ...)
           - focus-metavariable: $CTX
       - patterns:
           - pattern-inside: |
@@ -190,10 +222,15 @@ rules:
                   - pattern: $CLIENT.$METHOD($URL, ...)
                   - metavariable-regex:
                       metavariable: $CLIENT
-                      regex: ^(axios|got|ky|superagent|needle|http|https|undici|globalThis|window|self)$
+                      regex: ^(axios|got|ky|superagent|needle)$
+              - patterns:
+                  - pattern: $CLIENT.$METHOD($URL, ...)
+                  - metavariable-regex:
+                      metavariable: $CLIENT
+                      regex: ^(http|https|undici|globalThis|window|self)$
                   - metavariable-regex:
                       metavariable: $METHOD
-                      regex: ^(get|post|put|patch|delete|head|options|request|fetch|stream)$
+                      regex: ^(get|request|fetch|stream)$
           - focus-metavariable: $URL
           # 宛先のホストが固定の URL (パスだけが変わる) は SSRF にしない。`${x}/ で始まるものは次の sink で x だけを見る
           - metavariable-regex:
@@ -234,7 +271,7 @@ rules:
               - pattern: $FS.$F($P, ...)
           - metavariable-regex:
               metavariable: $F
-              regex: ^(readFile|readFileSync|writeFile|writeFileSync|appendFile|appendFileSync|createReadStream|createWriteStream|unlink|unlinkSync|readdir|readdirSync|copyFile|copyFileSync)$
+              regex: ^(readFile|readFileSync|writeFile|writeFileSync|appendFile|appendFileSync|createReadStream|createWriteStream|unlink|unlinkSync|readdir|readdirSync|copyFile|copyFileSync|rm|rmSync)$
           - focus-metavariable: $P
       - patterns:
           - pattern-either:
@@ -244,27 +281,47 @@ rules:
               metavariable: $F
               regex: ^(copyFile|copyFileSync)$
           - focus-metavariable: $P
-      # 他のオブジェクトにもある名前は、fs のものだけを見る
+      # 他のオブジェクトにもある名前は、fs のものだけを見る。rename などは宛先もパスなので全部の引数を見る (コールバックは除く)
       - patterns:
-          - pattern-inside: |
-              import { ..., $F, ... } from "$MOD";
-              ...
-          - pattern: $F($P, ...)
-          - metavariable-regex:
-              metavariable: $MOD
-              regex: ^(node:)?fs(/promises)?$
+          - pattern-either:
+              - patterns:
+                  - pattern: $FS.$F(..., $P, ...)
+                  - metavariable-regex:
+                      metavariable: $FS
+                      regex: ^(fs|fsp|fse|fsPromises|fs\.promises|promises)$
+              - patterns:
+                  - pattern-either:
+                      - pattern-inside: |
+                          import { ..., $F, ... } from "$MOD";
+                          ...
+                      - pattern-inside: |
+                          const { ..., $F, ... } = require("$MOD");
+                          ...
+                  - pattern: $F(..., $P, ...)
+                  - metavariable-regex:
+                      metavariable: $MOD
+                      regex: ^(node:)?fs(/promises)?$
+              - patterns:
+                  - pattern-either:
+                      - pattern-inside: |
+                          import * as $NS from "$MOD";
+                          ...
+                      - pattern-inside: |
+                          import $NS from "$MOD";
+                          ...
+                      - pattern-inside: |
+                          const $NS = require("$MOD");
+                          ...
+                  - pattern: $NS.$F(..., $P, ...)
+                  - metavariable-regex:
+                      metavariable: $MOD
+                      regex: ^(node:)?fs(/promises)?$
           - metavariable-regex:
               metavariable: $F
-              regex: ^(open|openSync|stat|statSync|lstat|lstatSync|access|accessSync|exists|existsSync|rename|renameSync|mkdir|mkdirSync|rmdir|rmdirSync|rm|rmSync|cp|cpSync|symlink|symlinkSync|truncate|truncateSync|chmod|chmodSync|chown|chownSync)$
-          - focus-metavariable: $P
-      - patterns:
-          - pattern: $FS.$F($P, ...)
+              regex: ^(open|openSync|stat|statSync|lstat|lstatSync|access|accessSync|exists|existsSync|rename|renameSync|mkdir|mkdirSync|rmdir|rmdirSync|cp|cpSync|symlink|symlinkSync|link|linkSync|truncate|truncateSync|chmod|chmodSync|chown|chownSync)$
           - metavariable-regex:
-              metavariable: $FS
-              regex: ^(fs|fsp|fse|fsPromises|fs\.promises|promises)$
-          - metavariable-regex:
-              metavariable: $F
-              regex: ^(open|openSync|stat|statSync|lstat|lstatSync|access|accessSync|exists|existsSync|rename|renameSync|mkdir|mkdirSync|rmdir|rmdirSync|rm|rmSync|cp|cpSync|symlink|symlinkSync|truncate|truncateSync|chmod|chmodSync|chown|chownSync)$
+              metavariable: $P
+              regex: ^(?!\(|async\b|function\b|[\w$]+\s*=>)
           - focus-metavariable: $P
 
   - id: nextjs-sql-injection
@@ -327,7 +384,6 @@ rules:
       confidence: MEDIUM
     pattern-sources: *sources
     pattern-sanitizers: &same-site
-      - pattern: encodeURIComponent(...)
       - pattern: Number(...)
       - pattern: parseInt(...)
       - pattern: parseFloat(...)
@@ -370,15 +426,16 @@ rules:
               - pattern: document.location = $U
               - pattern: window.open($U, ...)
           - focus-metavariable: $U
-          # `${x}?... や `${x}/... で始まるものは、宛先を決める x だけを次の sink で見る
+          # `${x}?... や `${x}/固定の文字列 で始まるものは、宛先を決める x だけを次の sink で見る。
+          # `${x}/${y} は x が / だと //y になりサイトの外へ飛ぶので、全体を見る。オブジェクトは下の sink で宛先のキーだけを見る
           - metavariable-regex:
               metavariable: $U
-              regex: ^(?!`\$\{[^}]+\}(/(?![/\\])|[?#]))
+              regex: ^(?!\{|`\$\{[^}]+\}(/[^/\\`$?#]+([/?#][^`]*)?|[?#][^`]*)$)
       - patterns:
           - pattern-either: *redirect-calls
           - metavariable-regex:
               metavariable: $U
-              regex: ^`\$\{[^}]+\}(/(?![/\\])|[?#])
+              regex: ^`\$\{[^}]+\}(/[^/\\`$?#]+([/?#][^`]*)?|[?#][^`]*)$
           - metavariable-pattern:
               metavariable: $U
               pattern: |
@@ -398,10 +455,31 @@ rules:
           - pattern: $HEADERS.$M($H, $U)
           - metavariable-regex:
               metavariable: $M
-              regex: ^(set|append)$
+              regex: ^(set|append|setHeader)$
           - metavariable-regex:
               metavariable: $H
               regex: (?i)^["'`]location["'`]$
+          - focus-metavariable: $U
+      - patterns:
+          - pattern: |
+              $RES.writeHead($CODE, {..., $H: $U, ...})
+          - metavariable-regex:
+              metavariable: $H
+              regex: (?i)^["']?location["']?$
+          - focus-metavariable: $U
+      - patterns:
+          - pattern: |
+              ({..., redirect: {..., destination: $U, ...}, ...})
+          - focus-metavariable: $U
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  router.push({..., $K: $U, ...}, ...)
+              - pattern: |
+                  router.replace({..., $K: $U, ...}, ...)
+          - metavariable-regex:
+              metavariable: $K
+              regex: ^(pathname|host|hostname|protocol)$
           - focus-metavariable: $U
 
   - id: nextjs-rewrite
@@ -438,33 +516,51 @@ rules:
       - pattern: parseFloat(...)
     pattern-sinks:
       - patterns:
-          - pattern-either:
-              - pattern: $F($C, ...)
-              - pattern: child_process.$F($C, ...)
-              - pattern: cp.$F($C, ...)
+          - pattern: $F($C, ...)
           - metavariable-regex:
               metavariable: $F
               regex: ^(exec|execSync|execAsync|execPromise|execP|execFile|execFileSync|spawn|spawnSync|fork|execaCommand|execaCommandSync)$
           - focus-metavariable: $C
+      # RegExp.exec と同じ名前の exec は、child_process のものだけを見る
       - patterns:
-          - pattern: shell.exec($C, ...)
+          - pattern-either:
+              - pattern: child_process.exec($C, ...)
+              - pattern: cp.exec($C, ...)
+              - pattern: shell.exec($C, ...)
+              - patterns:
+                  - pattern: $NS.$F($C, ...)
+                  - metavariable-regex:
+                      metavariable: $F
+                      regex: ^(execSync|execFile|execFileSync|spawn|spawnSync|fork|execaCommand|execaCommandSync)$
           - focus-metavariable: $C
       - patterns:
-          - pattern: |
-              $F($X, $C, {..., shell: true, ...})
+          - pattern-either:
+              - pattern: |
+                  $F($X, $C, {..., shell: $SHELL, ...})
+              - pattern: |
+                  $NS.$F($X, $C, {..., shell: $SHELL, ...})
           - metavariable-regex:
               metavariable: $F
               regex: ^(spawn|spawnSync|execFile|execFileSync)$
+          - metavariable-regex:
+              metavariable: $SHELL
+              regex: ^(?!false$)
           - focus-metavariable: $C
       - patterns:
-          - pattern: |
-              $F($SH, [..., "-c", $C, ...], ...)
+          - pattern-either:
+              - pattern: |
+                  $F($SH, [..., $FLAG, $C, ...], ...)
+              - pattern: |
+                  $NS.$F($SH, [..., $FLAG, $C, ...], ...)
           - metavariable-regex:
               metavariable: $F
               regex: ^(spawn|spawnSync|execFile|execFileSync)$
           - metavariable-regex:
               metavariable: $SH
-              regex: ^["'`](/bin/|/usr/bin/)?(ba|z|da)?sh["'`]$
+              regex: ^["'`](/bin/|/usr/bin/)?(ba|z|da|k|a)?sh["'`]$
+          - metavariable-regex:
+              metavariable: $FLAG
+              regex: ^["'`]-[a-zA-Z]*c[a-zA-Z]*["'`]$
           - focus-metavariable: $C
 
   - id: nextjs-code-injection
@@ -532,6 +628,10 @@ rules:
                   <$E dangerouslySetInnerHTML={{__html: $X}}>...</$E>
               - pattern: |
                   ({dangerouslySetInnerHTML: {__html: $X}})
+              - pattern: |
+                  <$E srcDoc={$X} />
+              - pattern: |
+                  <$E srcDoc={$X}>...</$E>
               - pattern: document.write($X)
               - pattern: document.writeln($X)
               - pattern: $EL.innerHTML = $X
@@ -571,26 +671,32 @@ rules:
                   <$E href={$X} />
               - pattern: |
                   <$E href={$X}>...</$E>
-              - pattern: |
-                  <$E srcDoc={$X} />
-              - pattern: |
-                  <$E srcDoc={$X}>...</$E>
-          # Link の href にオブジェクトを渡す書き方は、パスとクエリを分けているので見ない。
-          # `${x}?... や `${x}/... で始まるものは、宛先を決める x だけを次の sink で見る
+          # Link の href のオブジェクトは、下の sink で宛先のキーだけを見る。
+          # `${x}?... や `${x}/固定の文字列 で始まるものは、宛先を決める x だけを次の sink で見る
           - metavariable-regex:
               metavariable: $X
-              regex: ^(?!\{|`\$\{[^}]+\}(/(?![/\\])|[?#]))
+              regex: ^(?!\{|`\$\{[^}]+\}(/[^/\\`$?#]+([/?#][^`]*)?|[?#][^`]*)$)
           - focus-metavariable: $X
       - patterns:
           - pattern-either: *url-attrs
           - metavariable-regex:
               metavariable: $X
-              regex: ^`\$\{[^}]+\}(/(?![/\\])|[?#])
+              regex: ^`\$\{[^}]+\}(/[^/\\`$?#]+([/?#][^`]*)?|[?#][^`]*)$
           - metavariable-pattern:
               metavariable: $X
               pattern: |
                 `${$HEAD}...`
           - focus-metavariable: $HEAD
+      - patterns:
+          - pattern-either:
+              - pattern: |
+                  <$E href={{..., $K: $X, ...}} />
+              - pattern: |
+                  <$E href={{..., $K: $X, ...}}>...</$E>
+          - metavariable-regex:
+              metavariable: $K
+              regex: ^(pathname|host|hostname|protocol)$
+          - focus-metavariable: $X
       - patterns:
           - pattern-either:
               - pattern: |

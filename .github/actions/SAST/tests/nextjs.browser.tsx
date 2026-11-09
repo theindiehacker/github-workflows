@@ -23,6 +23,19 @@ export function Browser() {
   router.push(`${pathname}?${params.toString()}`);
   router.push(`${pathname}/edit?${params}`);
   const sameSite = <a href={`${pathname}?${params}`}>x</a>;
+  const tail = params.get("u")!;
+  router.push(`${pathname}?q=${tail}`);
+  router.push(`${pathname}#${tail}`);
+  // pathname が / でも //edit/... になり、ホストは固定の文字列のまま
+  router.push(`${pathname}/edit/${tail}`);
+
+  // pathname が / だと //evil.example になり、サイトの外へ飛ぶ
+  // ruleid: nextjs-open-redirect
+  router.push(`${pathname}/${tail}`);
+  // ruleid: nextjs-open-redirect
+  router.push(`${pathname}/a${tail}`);
+  // ruleid: nextjs-xss-url
+  const offSite = <a href={`${pathname}/${tail}`}>x</a>;
 
   return (
     <>
@@ -31,6 +44,7 @@ export function Browser() {
       {param}
       {referrer}
       {sameSite}
+      {offSite}
     </>
   );
 }
