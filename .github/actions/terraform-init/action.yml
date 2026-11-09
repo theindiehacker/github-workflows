@@ -2,7 +2,7 @@ name: "terraform init"
 description: >-
   ディレクトリごとに terraform init（-backend=false。lock ファイルがあれば -lockfile=readonly）を行い、
   init できたディレクトリを出す（terraform は事前に導入しておく）。
-  private の Module Registry のトークンは、呼び出す step の env（TF_TOKEN_<host>）で渡す
+  private の Module Registry の認証は、呼び出す job で credentials helper を入れておく
 
 inputs:
   dirs:
