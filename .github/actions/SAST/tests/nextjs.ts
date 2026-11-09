@@ -258,6 +258,21 @@ export function middleware(req: NextRequest) {
     // ok: nextjs-rewrite
     return NextResponse.rewrite(url);
   }
+  if (target === "assign-spread") {
+    const url = req.nextUrl.clone();
+    const patch = { host: target };
+    // ruleid: nextjs-rewrite
+    Object.assign(url, { ...patch });
+    return NextResponse.rewrite(url);
+  }
+  if (target === "assign-computed") {
+    const url = req.nextUrl.clone();
+    const key = "host";
+    // 計算キーのオブジェクトには、Semgrep の taint が伝わらない
+    // todoruleid: nextjs-rewrite
+    Object.assign(url, { [key]: target });
+    return NextResponse.rewrite(url);
+  }
   if (target === "alias") {
     const url = req.nextUrl.clone();
     const alias = url;

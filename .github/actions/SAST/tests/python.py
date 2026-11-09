@@ -1,5 +1,6 @@
 # SAST の自作ルールの検体。検知させたい書き方を意図して書くため、ruff の指摘は行ごとに noqa で外す。
 # S608 は CI の --select S でだけ有効になり、既定の ruff check はその noqa を不要 (RUF100) とするため、RUF100 も並べる
+import contextlib
 import html
 import os
 import zipfile
@@ -21,13 +22,15 @@ ORIGINS = ["*"]
 TRUSTED_ORIGINS = ["https://app.example"]
 LATER_ORIGINS = ["*"]
 LATER_ORIGINS = ["https://app.example"]
+WIDER_ORIGINS = ["https://app.example"]
+WIDER_ORIGINS = ["*", "https://app.example"]
 
 # ruleid: python-cors-credentials-any-origin
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True)
 
-# ruleid: python-cors-credentials-any-origin
 app.add_middleware(
     CORSMiddleware,
+    # ruleid: python-cors-credentials-any-origin
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
@@ -37,15 +40,17 @@ app.add_middleware(
 # ruleid: python-cors-credentials-any-origin
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origin_regex=".*")
 
-# ruleid: python-cors-credentials-any-origin
 app.add_middleware(
-    CORSMiddleware, allow_origin_regex=r"^https://.*$", allow_credentials=True
+    CORSMiddleware,
+    # ruleid: python-cors-credentials-any-origin
+    allow_origin_regex=r"^https://.*$",
+    allow_credentials=True,
 )
 
 middleware = [
-    # ruleid: python-cors-credentials-any-origin
     Middleware(
         CORSMiddleware,
+        # ruleid: python-cors-credentials-any-origin
         allow_origins=["https://app.example", "*"],
         allow_credentials=True,
     )
@@ -64,6 +69,9 @@ app.add_middleware(CORSMiddleware, allow_origins=("*",), allow_credentials=True)
 
 # ok: python-cors-credentials-any-origin
 app.add_middleware(CORSMiddleware, allow_origins=LATER_ORIGINS, allow_credentials=True)
+
+# ruleid: python-cors-credentials-any-origin
+app.add_middleware(CORSMiddleware, allow_origins=WIDER_ORIGINS, allow_credentials=True)
 
 # ok: python-cors-credentials-any-origin
 app.add_middleware(CORSMiddleware, allow_origins=["*"])
@@ -441,3 +449,21 @@ def find_users_join(conn, active: bool, admin: bool):
     sql += " AND ".join(clauses)
     # ok: python-sqlalchemy-exec-driver-sql
     return conn.exec_driver_sql(sql)
+
+
+def unzip_relative_to_suppressed(archive: Path, dest: Path) -> None:
+    with zipfile.ZipFile(archive) as zf:
+        for name in zf.namelist():
+            target = dest / name
+            with contextlib.suppress(ValueError):
+                target.resolve().relative_to(dest.resolve())
+            # ruleid: python-zip-slip
+            target.write_bytes(zf.read(name))
+
+
+def update_value_check(user, payload: dict) -> None:
+    for key, value in payload.items():
+        # 値を確かめても、キーは絞れていない
+        if value in {"on", "off"}:
+            # ruleid: python-mass-assignment
+            setattr(user, key, value)

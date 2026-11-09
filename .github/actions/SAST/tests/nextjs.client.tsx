@@ -25,6 +25,12 @@ export const publicEnv = {
   rollbar: process.env.NEXT_PUBLIC_ROLLBAR_CLIENT_TOKEN,
   // ok: nextjs-public-env-secret
   mapbox: process.env.NEXT_PUBLIC_MAPBOX_TOKEN,
+  // ruleid: nextjs-public-env-secret
+  mapboxSecret: process.env.NEXT_PUBLIC_MAPBOX_SECRET_TOKEN,
+  // ruleid: nextjs-public-env-secret
+  mapboxKey: process.env.NEXT_PUBLIC_MAPBOX_SECRET_KEY,
+  // ok: nextjs-public-env-secret
+  cesium: process.env.NEXT_PUBLIC_CESIUM_ION_TOKEN,
   // ok: nextjs-public-env-secret
   mapboxAccess: process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN,
   // ok: nextjs-public-env-secret

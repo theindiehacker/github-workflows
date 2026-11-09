@@ -1,5 +1,6 @@
 rules:
   - id: python-cors-credentials-any-origin
+    mode: taint
     languages: [python]
     severity: ERROR
     message: どのサイトにも、Cookie 付きのリクエストと応答の読み取りを許しています (CORS)。Starlette はこの設定だと、届いた Origin をそのまま許可します。allow_origins に自サイトのオリジンだけを並べてください。
@@ -8,40 +9,29 @@ rules:
       technology: [fastapi, starlette]
       cwe: "CWE-942: Permissive Cross-domain Policy with Untrusted Domains"
       confidence: HIGH
-    patterns:
-      - pattern-either:
-          - pattern: $APP.add_middleware(CORSMiddleware, ..., allow_credentials=True, ...)
-          - pattern: Middleware(CORSMiddleware, ..., allow_credentials=True, ...)
-      - pattern-either:
-          - pattern: $APP.add_middleware(CORSMiddleware, ..., allow_origins=[..., "*", ...], ...)
-          - pattern: Middleware(CORSMiddleware, ..., allow_origins=[..., "*", ...], ...)
-          - pattern: $APP.add_middleware(CORSMiddleware, ..., allow_origins=(..., "*", ...), ...)
-          - pattern: Middleware(CORSMiddleware, ..., allow_origins=(..., "*", ...), ...)
-          # 定数などの変数に入れた一覧 (あとで別の一覧を代入し直したものは除く)
-          - patterns:
-              - pattern-either:
-                  - pattern-inside: |
-                      $V = [..., "*", ...]
-                      ...
-                  - pattern-inside: |
-                      $V = (..., "*", ...)
-                      ...
-              - pattern-not-inside: |
-                  $V = $W
-                  ...
-                  $V = $W2
-                  ...
-              - pattern-either:
-                  - pattern: $APP.add_middleware(CORSMiddleware, ..., allow_origins=$V, ...)
-                  - pattern: Middleware(CORSMiddleware, ..., allow_origins=$V, ...)
-          - patterns:
-              - pattern-either:
-                  - pattern: $APP.add_middleware(CORSMiddleware, ..., allow_origin_regex=$R, ...)
-                  - pattern: Middleware(CORSMiddleware, ..., allow_origin_regex=$R, ...)
-              # .*・^https://.*$ など、どのオリジンにも一致する正規表現
-              - metavariable-regex:
-                  metavariable: $R
-                  regex: ^[rRuU]?["'](\^)?(https?\??://|\(https?\)://)?\.[*+]\$?["']$
+    # 変数に入れた一覧も、代入し直した値も追えるよう、"*" を含む一覧と何でも通す正規表現を入口にする
+    pattern-sources:
+      - pattern: |
+          [..., "*", ...]
+      - pattern: |
+          (..., "*", ...)
+      # .*・^https://.*$ など、どのオリジンにも一致する正規表現
+      - patterns:
+          - pattern: $S
+          - metavariable-regex:
+              metavariable: $S
+              regex: ^[rRuU]?["'](\^)?(https?\??://|\(https?\)://)?\.[*+]\$?["']$
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: $APP.add_middleware(CORSMiddleware, ..., allow_credentials=True, ...)
+              - pattern: Middleware(CORSMiddleware, ..., allow_credentials=True, ...)
+          - pattern-either:
+              - pattern: $APP.add_middleware(CORSMiddleware, ..., allow_origins=$O, ...)
+              - pattern: Middleware(CORSMiddleware, ..., allow_origins=$O, ...)
+              - pattern: $APP.add_middleware(CORSMiddleware, ..., allow_origin_regex=$O, ...)
+              - pattern: Middleware(CORSMiddleware, ..., allow_origin_regex=$O, ...)
+          - focus-metavariable: $O
 
   - id: python-zip-slip
     mode: taint
@@ -119,6 +109,9 @@ rules:
               try:
                   ...
               except $E:
+                  ...
+          - pattern-not-inside: |
+              with contextlib.suppress(...):
                   ...
           - focus-metavariable: $T
     pattern-sinks:

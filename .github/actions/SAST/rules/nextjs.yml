@@ -479,6 +479,10 @@ rules:
                   - metavariable-regex:
                       metavariable: $K
                       regex: ^(["'`](host|hostname|href|protocol|port)["'`]?|[^"'`].*)$
+              # スプレッドは、どのキーかを追えない
+              - pattern: |
+                  Object.assign($U, ..., {..., ...$X, ...}, ...)
+              # ホストに関わるキー。計算キー ({ [key]: x }) のオブジェクトには、Semgrep の taint が伝わらないので見られない
               - patterns:
                   - pattern: |
                       Object.assign($U, ..., {..., $K: $X, ...}, ...)
@@ -580,13 +584,46 @@ rules:
               metavariable: $SHELL
               regex: ^(?!false$)
           - focus-metavariable: $C
-      # sh -c (-lc・-ec なども) に渡した文字列は、シェルのコマンドとして解釈される
+      # sh -c (-lc・-ec なども) の後の最初の引数 (-- の次も) は、シェルのコマンドとして解釈される。
+      # フラグは、shell 名の直後に並ぶオプション (2 つ目まで) の中だけを見る (["script.sh", "-c", x] の -c は script.sh への引数)
       - patterns:
           - pattern-either:
-              - pattern: |
-                  $F($SH, [..., $FLAG, $C, ...], ...)
-              - pattern: |
-                  $NS.$F($SH, [..., $FLAG, $C, ...], ...)
+              - patterns:
+                  - pattern: |
+                      $F($SH, [$FLAG, $C, ...], ...)
+              - patterns:
+                  - pattern: |
+                      $NS.$F($SH, [$FLAG, $C, ...], ...)
+              - patterns:
+                  - pattern: |
+                      $F($SH, [$O1, $FLAG, $C, ...], ...)
+                  - metavariable-regex:
+                      metavariable: $O1
+                      regex: ^(["']-[^"']*["']|`-[^`]*`?)$
+              - patterns:
+                  - pattern: |
+                      $NS.$F($SH, [$O1, $FLAG, $C, ...], ...)
+                  - metavariable-regex:
+                      metavariable: $O1
+                      regex: ^(["']-[^"']*["']|`-[^`]*`?)$
+              - patterns:
+                  - pattern: |
+                      $F($SH, [$FLAG, "--", $C, ...], ...)
+              - patterns:
+                  - pattern: |
+                      $NS.$F($SH, [$FLAG, "--", $C, ...], ...)
+              - patterns:
+                  - pattern: |
+                      $F($SH, [$O1, $FLAG, "--", $C, ...], ...)
+                  - metavariable-regex:
+                      metavariable: $O1
+                      regex: ^(["']-[^"']*["']|`-[^`]*`?)$
+              - patterns:
+                  - pattern: |
+                      $NS.$F($SH, [$O1, $FLAG, "--", $C, ...], ...)
+                  - metavariable-regex:
+                      metavariable: $O1
+                      regex: ^(["']-[^"']*["']|`-[^`]*`?)$
           # テンプレートリテラルは、Semgrep が閉じのバッククォートを含めずに比べる
           - metavariable-regex:
               metavariable: $FLAG
@@ -596,7 +633,7 @@ rules:
               regex: ^(spawn|spawnSync|execFile|execFileSync)$
           - metavariable-regex:
               metavariable: $SH
-              regex: ^["'`](/bin/|/usr/bin/)?(sh|bash|zsh|dash)["'`]$
+              regex: ^(["'](/bin/|/usr/bin/)?(sh|bash|zsh|dash)["']|`(/bin/|/usr/bin/)?(sh|bash|zsh|dash)`?)$
           - focus-metavariable: $C
 
   - id: nextjs-code-injection
@@ -783,4 +820,4 @@ rules:
       # ACCESS_KEY だけで終わる名前 (Unsplash などの公開する鍵や、AWS の ACCESS_KEY_ID の類) は見ない
       - metavariable-regex:
           metavariable: $NAME
-          regex: ^NEXT_PUBLIC_(?!(\w+_)?(MAPBOX|CESIUM)_|(\w+_)?(CLIENT|PUBLIC|PUBLISHABLE)_TOKEN$)(\w+_)?(SECRET|SECRET_KEY|SECRET_ACCESS_KEY|TOKEN|PRIVATE_KEY|PASSWORD|PASSWD|CREDENTIALS?|SERVICE_ROLE|SERVICE_ROLE_KEY)$
+          regex: ^NEXT_PUBLIC_(?!(\w+_)?((MAPBOX|CESIUM)((?!\w*SECRET)_\w+)?|CLIENT|PUBLIC|PUBLISHABLE)_TOKEN$)(\w+_)?(SECRET|SECRET_KEY|SECRET_ACCESS_KEY|TOKEN|PRIVATE_KEY|PASSWORD|PASSWD|CREDENTIALS?|SERVICE_ROLE|SERVICE_ROLE_KEY)$
