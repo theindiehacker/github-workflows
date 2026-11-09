@@ -202,6 +202,10 @@ async function localFetch(value: string) {
   return fetch(value);
 }
 
+function setHost(u: URL, host: string) {
+  u.host = host;
+}
+
 export function middleware(req: NextRequest) {
   const target = req.nextUrl.searchParams.get("target");
   if (!target) {
@@ -211,6 +215,95 @@ export function middleware(req: NextRequest) {
   if (target === "maintenance") {
     // ok: nextjs-rewrite
     return NextResponse.rewrite(new URL("/maintenance", req.url));
+  }
+  if (target === "login") {
+    const url = req.nextUrl.clone();
+    url.pathname = "/login";
+    // ok: nextjs-rewrite
+    return NextResponse.rewrite(url);
+  }
+  if (target === "locale") {
+    const url = new URL(req.url);
+    url.pathname = `/en${url.pathname}`;
+    // ok: nextjs-rewrite
+    return NextResponse.rewrite(url);
+  }
+  if (target === "body") {
+    const data = { url: target };
+    const url = new URL(data.url);
+    // ruleid: nextjs-rewrite
+    return NextResponse.rewrite(url);
+  }
+  if (target === "reassign") {
+    let url = req.nextUrl.clone();
+    // ruleid: nextjs-rewrite
+    url = new URL(target);
+    return NextResponse.rewrite(url);
+  }
+  if (target === "assign") {
+    const url = req.nextUrl.clone();
+    // ruleid: nextjs-rewrite
+    Object.assign(url, { host: target });
+    return NextResponse.rewrite(url);
+  }
+  if (target === "assign-path") {
+    const url = req.nextUrl.clone();
+    Object.assign(url, { pathname: "/login" });
+    // ok: nextjs-rewrite
+    return NextResponse.rewrite(url);
+  }
+  if (target === "assign-tainted-path") {
+    const url = req.nextUrl.clone();
+    Object.assign(url, { pathname: target });
+    // ok: nextjs-rewrite
+    return NextResponse.rewrite(url);
+  }
+  if (target === "assign-spread") {
+    const url = req.nextUrl.clone();
+    const patch = { host: target };
+    // ruleid: nextjs-rewrite
+    Object.assign(url, { ...patch });
+    return NextResponse.rewrite(url);
+  }
+  if (target === "assign-computed") {
+    const url = req.nextUrl.clone();
+    const key = "host";
+    // 計算キーのオブジェクトには、Semgrep の taint が伝わらない
+    // todoruleid: nextjs-rewrite
+    Object.assign(url, { [key]: target });
+    return NextResponse.rewrite(url);
+  }
+  if (target === "alias") {
+    const url = req.nextUrl.clone();
+    const alias = url;
+    alias.host = target;
+    // ruleid: nextjs-rewrite
+    return NextResponse.rewrite(url);
+  }
+  if (target === "computed") {
+    const url = req.nextUrl.clone();
+    // ruleid: nextjs-rewrite
+    url["host"] = target;
+    return NextResponse.rewrite(url);
+  }
+  if (target === "helper") {
+    const url = req.nextUrl.clone();
+    setHost(url, target);
+    // ruleid: nextjs-rewrite
+    return NextResponse.rewrite(url);
+  }
+  if (target === "log") {
+    const url = req.nextUrl.clone();
+    console.log(url);
+    url.pathname = "/login";
+    // ok: nextjs-rewrite
+    return NextResponse.rewrite(url);
+  }
+  if (target.startsWith("proxy")) {
+    const url = req.nextUrl.clone();
+    // ruleid: nextjs-rewrite
+    url.host = target;
+    return NextResponse.rewrite(url);
   }
   // ruleid: nextjs-rewrite
   return NextResponse.rewrite(new URL(target));

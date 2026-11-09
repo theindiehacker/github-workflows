@@ -437,7 +437,103 @@ rules:
     pattern-sources: *sources
     pattern-sanitizers: *same-site
     pattern-sinks:
+      # リクエスト (req・request) の URL を写し、パスやクエリだけを変えたものは、ホストが変わらない。
+      # 写した URL は、ホストを変える代入・再代入・Object.assign と、別名や関数に渡したあとの rewrite を、下の sink で見る
       - patterns:
+          - pattern: NextResponse.rewrite($U, ...)
+          - pattern-not-inside: |
+              $U = req.nextUrl.clone();
+              ...
+          - pattern-not-inside: |
+              $U = request.nextUrl.clone();
+              ...
+          - pattern-not-inside: |
+              $U = new URL(req.url);
+              ...
+          - pattern-not-inside: |
+              $U = new URL(request.url);
+              ...
+          - pattern-not-inside: |
+              $U = new URL(req.nextUrl);
+              ...
+          - pattern-not-inside: |
+              $U = new URL(request.nextUrl);
+              ...
+          - focus-metavariable: $U
+      - patterns:
+          - pattern-inside: |
+              $U = $C;
+              ...
+          - metavariable-regex:
+              metavariable: $C
+              regex: ^((req|request)\.nextUrl\.clone\(\)|new URL\((req|request)\.(url|nextUrl)\))$
+          - pattern-either:
+              - pattern: $U.host = $X
+              - pattern: $U.hostname = $X
+              - pattern: $U.href = $X
+              - pattern: $U.protocol = $X
+              - pattern: $U.port = $X
+              - patterns:
+                  - pattern: $U[$K] = $X
+                  # ホストに関わるキーか、決まっていないキー
+                  - metavariable-regex:
+                      metavariable: $K
+                      regex: ^(["'`](host|hostname|href|protocol|port)["'`]?|[^"'`].*)$
+              # スプレッドは、どのキーかを追えない
+              - pattern: |
+                  Object.assign($U, ..., {..., ...$X, ...}, ...)
+              # ホストに関わるキー。計算キー ({ [key]: x }) のオブジェクトには、Semgrep の taint が伝わらないので見られない
+              - patterns:
+                  - pattern: |
+                      Object.assign($U, ..., {..., $K: $X, ...}, ...)
+                  - metavariable-regex:
+                      metavariable: $K
+                      regex: ^["']?(host|hostname|href|protocol|port)["']?$
+              - patterns:
+                  - pattern: $U = $X
+                  - metavariable-regex:
+                      metavariable: $X
+                      regex: ^(?!((req|request)\.nextUrl\.clone\(\)|new URL\((req|request)\.(url|nextUrl)\))$)
+          - focus-metavariable: $X
+      # 別名を作ったり、関数に渡したりすると、ホストを変えたかを追えない
+      # (console.* と、オブジェクトを書いた Object.assign は除く。後者はホストのキーだけを上の sink で見る)
+      - patterns:
+          - pattern-inside: |
+              $U = $C;
+              ...
+              $A = $U;
+              ...
+          - metavariable-regex:
+              metavariable: $C
+              regex: ^((req|request)\.nextUrl\.clone\(\)|new URL\((req|request)\.(url|nextUrl)\))$
+          - pattern: NextResponse.rewrite($U, ...)
+          - focus-metavariable: $U
+      - patterns:
+          - pattern-inside: |
+              $U = $C;
+              ...
+              $F(..., $U, ...);
+              ...
+          - metavariable-regex:
+              metavariable: $C
+              regex: ^((req|request)\.nextUrl\.clone\(\)|new URL\((req|request)\.(url|nextUrl)\))$
+          - metavariable-regex:
+              metavariable: $F
+              regex: ^(?!console\.|Object\.assign$|NextResponse\.)
+          - pattern: NextResponse.rewrite($U, ...)
+          - focus-metavariable: $U
+      - patterns:
+          - pattern-inside: |
+              $U = $C;
+              ...
+              Object.assign($U, ..., $P, ...);
+              ...
+          - metavariable-regex:
+              metavariable: $C
+              regex: ^((req|request)\.nextUrl\.clone\(\)|new URL\((req|request)\.(url|nextUrl)\))$
+          - metavariable-regex:
+              metavariable: $P
+              regex: ^[^{]
           - pattern: NextResponse.rewrite($U, ...)
           - focus-metavariable: $U
 
@@ -488,19 +584,57 @@ rules:
               metavariable: $SHELL
               regex: ^(?!false$)
           - focus-metavariable: $C
-      # sh -c に渡した文字列は、シェルのコマンドとして解釈される
+      # sh -c (-lc・-ec なども) の後の最初の引数 (-- の次も) は、シェルのコマンドとして解釈される。
+      # 引数の先頭がオプションのときだけ見る (["script.sh", "-c", x] の -c は script.sh への引数)。
+      # -c の前には、オプションがいくつ並んでもよい (-e -u や、値を取る -o pipefail)
       - patterns:
           - pattern-either:
-              - pattern: |
-                  $F($SH, [..., "-c", $C, ...], ...)
-              - pattern: |
-                  $NS.$F($SH, [..., "-c", $C, ...], ...)
+              - patterns:
+                  - pattern: |
+                      $F($SH, [$FLAG, $C, ...], ...)
+              - patterns:
+                  - pattern: |
+                      $NS.$F($SH, [$FLAG, $C, ...], ...)
+              - patterns:
+                  - pattern: |
+                      $F($SH, [$FIRST, ..., $FLAG, $C, ...], ...)
+                  - metavariable-regex:
+                      metavariable: $FIRST
+                      regex: ^(["']-[^"']*["']|`-[^`]*`?)$
+              - patterns:
+                  - pattern: |
+                      $NS.$F($SH, [$FIRST, ..., $FLAG, $C, ...], ...)
+                  - metavariable-regex:
+                      metavariable: $FIRST
+                      regex: ^(["']-[^"']*["']|`-[^`]*`?)$
+              - patterns:
+                  - pattern: |
+                      $F($SH, [$FLAG, "--", $C, ...], ...)
+              - patterns:
+                  - pattern: |
+                      $NS.$F($SH, [$FLAG, "--", $C, ...], ...)
+              - patterns:
+                  - pattern: |
+                      $F($SH, [$FIRST, ..., $FLAG, "--", $C, ...], ...)
+                  - metavariable-regex:
+                      metavariable: $FIRST
+                      regex: ^(["']-[^"']*["']|`-[^`]*`?)$
+              - patterns:
+                  - pattern: |
+                      $NS.$F($SH, [$FIRST, ..., $FLAG, "--", $C, ...], ...)
+                  - metavariable-regex:
+                      metavariable: $FIRST
+                      regex: ^(["']-[^"']*["']|`-[^`]*`?)$
+          # テンプレートリテラルは、Semgrep が閉じのバッククォートを含めずに比べる
+          - metavariable-regex:
+              metavariable: $FLAG
+              regex: ^(["']-[a-zA-Z]*c[a-zA-Z]*["']|`-[a-zA-Z]*c[a-zA-Z]*`?)$
           - metavariable-regex:
               metavariable: $F
               regex: ^(spawn|spawnSync|execFile|execFileSync)$
           - metavariable-regex:
               metavariable: $SH
-              regex: ^["'`](/bin/|/usr/bin/)?(sh|bash|zsh|dash)["'`]$
+              regex: ^(["'](/bin/|/usr/bin/)?(sh|bash|zsh|dash)["']|`(/bin/|/usr/bin/)?(sh|bash|zsh|dash)`?)$
           - focus-metavariable: $C
 
   - id: nextjs-code-injection
@@ -553,10 +687,15 @@ rules:
       - pattern: parseFloat(...)
       - pattern: DOMPurify.sanitize(...)
       - pattern: sanitizeHtml(...)
-      # < をすべて置き換えると、タグを作れない (Next.js の JSON-LD の書き方: JSON.stringify(x).replace(/</g, "\\u003c"))
-      - pattern: $S.replace(/</g, ...)
-      - pattern: $S.replaceAll("<", ...)
-      - pattern: $S.replaceAll(/</g, ...)
+      # < をすべてエスケープした形に置き換えると、タグを作れない (Next.js の JSON-LD の書き方: JSON.stringify(x).replace(/</g, "\\u003c"))
+      - patterns:
+          - pattern-either:
+              - pattern: $S.replace(/</g, $R)
+              - pattern: $S.replaceAll("<", $R)
+              - pattern: $S.replaceAll(/</g, $R)
+          - metavariable-regex:
+              metavariable: $R
+              regex: (?i)^["'`](\\\\u003c|\\\\x3c|&lt;|&#0*60;|&#x0*3c;)["'`]$
     pattern-sinks:
       - patterns:
           - pattern-either:
@@ -677,7 +816,9 @@ rules:
       - pattern-either:
           - pattern: process.env.$NAME
           - pattern: process.env["$NAME"]
-      # 秘密の値を表す語で終わる名前 (NEXT_PUBLIC_IS_PRIVATE_BETA や NEXT_PUBLIC_OAUTH_TOKEN_URL は除く)
+      # 秘密の値を表す語で終わる名前 (NEXT_PUBLIC_IS_PRIVATE_BETA や NEXT_PUBLIC_OAUTH_TOKEN_URL は除く)。
+      # ブラウザで使う前提で公開するトークン (Mapbox・Cesium と、CLIENT・PUBLIC・PUBLISHABLE の付いたもの) は除く。
+      # ACCESS_KEY だけで終わる名前 (Unsplash などの公開する鍵や、AWS の ACCESS_KEY_ID の類) は見ない
       - metavariable-regex:
           metavariable: $NAME
-          regex: ^NEXT_PUBLIC_(\w+_)?(SECRET|SECRET_KEY|PRIVATE_KEY|PASSWORD|PASSWD|CREDENTIALS?|SERVICE_ROLE|SERVICE_ROLE_KEY|TOKEN|ACCESS_KEY)$
+          regex: ^NEXT_PUBLIC_(?!(\w+_)?((MAPBOX|CESIUM)((?!\w*SECRET)_\w+)?|CLIENT|PUBLIC|PUBLISHABLE)_TOKEN$)(\w+_)?(SECRET|SECRET_KEY|SECRET_ACCESS_KEY|TOKEN|PRIVATE_KEY|PASSWORD|PASSWD|CREDENTIALS?|SERVICE_ROLE|SERVICE_ROLE_KEY)$
