@@ -8,6 +8,7 @@ import { db } from "./db";
 
 const API_BASE = "https://api.example.com";
 const apiBase = "https://api.example.com";
+const proto = "https:";
 const BASE = "/data";
 const schema = z.object({ url: z.string() });
 
@@ -42,6 +43,12 @@ export async function GET(req: NextRequest) {
   const TARGET = url;
   // ruleid: nextjs-ssrf
   await fetch(`${TARGET}/x`);
+  // ruleid: nextjs-ssrf
+  await fetch(`${proto}//${url}/x`);
+  // ruleid: nextjs-ssrf
+  await fetch(`${proto}/\\${url}/x`);
+  // todoruleid: nextjs-ssrf
+  await fetch(`${proto}/${url}/x`);
   // ruleid: nextjs-ssrf
   await fetch(`${buildUrl(url)}/x`);
   // ruleid: nextjs-ssrf

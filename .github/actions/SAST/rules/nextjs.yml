@@ -71,7 +71,7 @@ rules:
           # 宛先のホストが固定の URL (パスだけが変わる) は SSRF にしない。`${x}/ で始まるものは次の sink で x だけを見る
           - metavariable-regex:
               metavariable: $URL
-              regex: ^(?!`(https?://[^/$`]+/|\$\{[^}]+\}/))
+              regex: ^(?!`(https?://[^/$`]+/|\$\{[^}]+\}/(?![/\\])))
       - patterns:
           - pattern-either:
               - pattern: fetch($URL, ...)
@@ -82,7 +82,7 @@ rules:
               - pattern: request($URL, ...)
           - metavariable-regex:
               metavariable: $URL
-              regex: ^`\$\{[^}]+\}/
+              regex: ^`\$\{[^}]+\}/(?![/\\])
           - metavariable-pattern:
               metavariable: $URL
               pattern: |
