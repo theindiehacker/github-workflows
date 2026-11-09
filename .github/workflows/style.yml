@@ -31,8 +31,8 @@ env:
   UV_VERSION: "0.13.6"
   # renovate: datasource=pypi depName=ruff
   RUFF_VERSION: "0.17.3"
-  # renovate: datasource=pypi depName=pyright
-  PYRIGHT_VERSION: "1.1.414"
+  # renovate: datasource=pypi depName=ty
+  TY_VERSION: "0.0.95"
   # renovate: datasource=pypi depName=import-linter
   IMPORT_LINTER_VERSION: "2.15"
   # renovate: datasource=pypi depName=deptry
@@ -100,8 +100,7 @@ jobs:
               - "**/ruff.toml"
               - "**/.ruff.toml"
               - "**/pyproject.toml"
-              # pyrightconfig.json と、extends で読む共有の設定（この名前にすれば変更で検査が動く）
-              - "**/pyright*.json"
+              - "**/ty.toml"
               - "**/setup.cfg"
               - "**/.importlinter"
               - "**/uv.lock"
@@ -389,17 +388,17 @@ jobs:
         if: ${{ !cancelled() && steps.uv.outcome == 'success' }}
         run: |
           set -euo pipefail
-          # workspace の全メンバー・extras・dependency-groups まで入れる（不足すると Pyright / deptry が誤検知する）
+          # workspace の全メンバー・extras・dependency-groups まで入れる（不足すると ty / deptry が誤検知する）
           if uv sync --frozen --all-packages --all-extras --all-groups; then exit 0; fi
-          echo "::warning::extras を含めた uv sync に失敗したため extras を除いて検査します（extras 限定の依存は Pyright / deptry が誤検知することがあります）"
+          echo "::warning::extras を含めた uv sync に失敗したため extras を除いて検査します（extras 限定の依存は ty / deptry が誤検知することがあります）"
           # 導入できなければ検査を skip せず fail させる（緑のまま「何も検査していない」状態を作らないため）
           uv sync --frozen --all-packages --all-groups || { echo "::error::uv sync に失敗しました。ランナーで依存を導入できない repo の扱いは docs/SETUP.md「✏️ スタイルチェック」の例外運用を参照してください"; exit 1; }
 
-      - name: "🧱 Pyright - 型チェック"
+      - name: "🧱 ty - 型チェック"
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
-        uses: $/.github/actions/pyright
+        uses: $/.github/actions/ty
         with:
-          version: ${{ env.PYRIGHT_VERSION }}
+          version: ${{ env.TY_VERSION }}
           project: ${{ matrix.project }}
           nested: ${{ needs.lint.outputs.python_nested }}
 

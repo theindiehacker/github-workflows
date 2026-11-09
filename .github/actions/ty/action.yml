@@ -1,11 +1,11 @@
-name: "Pyright で型チェック"
+name: "ty で型チェック"
 description: >-
-  プロジェクト（uv.lock のあるディレクトリ）の環境で Pyright を実行する。検査対象と厳しさはプロジェクトの設定に委ね、
+  プロジェクト（uv.lock のあるディレクトリ）の環境で ty を実行する。検査対象と厳しさはプロジェクトの設定に委ね、
   設定が無ければ入れ子のプロジェクトを除いた設定を書き出す（uv と依存関係は事前に導入しておく）
 
 inputs:
   version:
-    description: "pyright（PyPI）の版"
+    description: "ty（PyPI）の版"
     required: true
   project:
     description: "検査するプロジェクトのディレクトリ"
@@ -17,13 +17,11 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: "Pyright"
+    - name: "ty"
       shell: bash
       working-directory: ${{ inputs.project }}
       env:
-        PYRIGHT_VERSION: ${{ inputs.version }}
+        TY_VERSION: ${{ inputs.version }}
         PROJECT: ${{ inputs.project }}
         NESTED: ${{ inputs.nested }}
-        # 版の更新の確認（毎回の PyPI への問い合わせと警告）をしない。版は Renovate が上げる
-        PYRIGHT_PYTHON_IGNORE_WARNINGS: "1"
-      run: bash "${GITHUB_ACTION_PATH}/pyright.sh"
+      run: bash "${GITHUB_ACTION_PATH}/ty.sh"
