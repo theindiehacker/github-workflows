@@ -31,6 +31,12 @@ export default async function Page({
   if (!q) redirect(`/${next}`);
   // ruleid: nextjs-open-redirect
   if (!q) redirect(withReturnTo(next));
+  // ruleid: nextjs-open-redirect
+  if (!q) redirect(`/x` + next);
+  // ruleid: nextjs-open-redirect
+  if (!q) redirect(`/x`.concat(next));
+  // ruleid: nextjs-open-redirect
+  if (!q) redirect(`/x` || next);
 
   // ruleid: nextjs-ssrf
   await fetch(u);
@@ -53,6 +59,8 @@ export default async function Page({
   const clean = <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(q) }} />;
   // ruleid: nextjs-xss
   const dirty = <div dangerouslySetInnerHTML={{ __html: q }} />;
+  // ruleid: nextjs-xss
+  const encoded = <div dangerouslySetInnerHTML={{ __html: encodeURIComponent(q) }} />;
 
   return (
     <>
@@ -60,6 +68,7 @@ export default async function Page({
       {fixed}
       {clean}
       {dirty}
+      {encoded}
     </>
   );
 }
