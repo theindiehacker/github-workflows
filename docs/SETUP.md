@@ -115,7 +115,7 @@ terraform -chdir=terraform/github apply
 | `bundle-size-measure` / `bundle-size-comment` | フロントエンド（Next.js / Astro）の JS・CSS の gzip 後のサイズの増減を PR にコメント（報告だけで失敗しない） |
 
 > 必須ワークフローは、対象 repo のコードを実行してよい（`style.yml` の `python` / `typescript` job の `uv sync` / `bun install` による依存導入と、その環境上で動く Pyright / lint-imports / deptry / Biome / knip / tsc、`terraform` job の `terraform init` / `validate` / `test` が実行する provider・module、`bundle-size-measure` job の `bun install` とビルドなど）。ただし次を守る。
-> - `permissions` は read のみとし、secrets を使わない（例外: `terraform` job にだけ `id-token: write` を付け、private の Module Registry（registry.fastship.jp）の ID トークンを [registry-fastship-action](https://github.com/theindiehacker/registry-fastship-action) で取得して、`terraform init` の step にだけ渡す。fork からの PR では取得できない。PR にコメントする `bundle-size-comment` job にだけ `pull-requests: write` を付ける。この job は checkout せず、PR のコードを動かさない）。トリガーは `pull_request` とし、`pull_request_target` では動かさない
+> - `permissions` は read のみとし、secrets を使わない（例外: `terraform` job にだけ `id-token: write` を付け、private の Module Registry（registry.fastship.jp）からモジュールを取得できるよう、[registry-fastship-action](https://github.com/theindiehacker/registry-fastship-action) の credentials helper を入れる。helper は job の後の step からも使えるが、`id-token: write` の job ではどの step も元から ID トークンを取れるため、取れる範囲は広がらない。fork からの PR では ID トークンを取得できない。PR にコメントする `bundle-size-comment` job にだけ `pull-requests: write` を付ける。この job は checkout せず、PR のコードを動かさない）。トリガーは `pull_request` とし、`pull_request_target` では動かさない
 > - `actions/checkout` は `persist-credentials: false` にする
 > - PR のコードを実行する処理は `lint` と別の job にし、対象のファイルがあるときだけ動かす（常に動く `lint` の job では PR のコードを実行しない）
 > - repo の環境に依存して失敗し得る前提は、下の「導入時の前提」に書く。対応できない repo は「例外運用」で外す
