@@ -33,14 +33,17 @@ jobs:
       id-token: write
 
     # workflow レベルに移さないこと (無関係なコメントで実行中のレビューが巻き添えキャンセルされる)
+    # push (synchronize) では実行中のレビューを取り消さず、終わるのを待つ。
+    # 取り消すと、再レビューの要否の確認で飛ばしたときに、どのレビューも残らない
     concurrency:
       group: code-review-pr-${{ github.event.issue.number || github.event.pull_request.number }}
-      cancel-in-progress: true
+      cancel-in-progress: ${{ github.event.action != 'synchronize' }}
 
     # pwn request 対策。ロール判定・Bot 除外を緩めないこと
     # closed / merged PR では action が PR ブランチではなく新規ブランチを作る経路に入るため open のみ
     # コメント本文は prefix 判定のみ (Claude Code の署名フッター等の後続文字列を許容するため)
     # PR の作成時 (Draft は Ready にしたとき) は、コメントを待たずにレビューする (依頼し忘れを防ぐ)。
+    # push (synchronize) では、Claude の承認が取り消されたときだけ再レビューする (「🔁 再レビューの要否の確認」)。
     # このリポジトリのブランチ (push できる = 書き込み権限がある) からの PR に限る。fork の PR には secrets が渡らない
     if: >-
       (
@@ -77,9 +80,45 @@ jobs:
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # ruleset の dismiss_stale_reviews_on_push で、承認後の push は承認を取り消す (DISMISSED になる)。
+      # nit を直しただけでも取り消されるため、Claude の最後の判定が取り消された承認なら、push 後の変更を再レビューする。
+      # 最後の判定が変更依頼 (Draft に戻している) や、取り消されていない承認なら飛ばす
+      - name: "🔁 再レビューの要否の確認"
+        id: rereview
+        if: steps.credentials.outputs.run == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_ACTION: ${{ github.event.action }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_ACTION" != "synchronize" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # インラインコメントの COMMENTED は判定ではないため除く
+          last=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews" \
+            --jq '.[] | select(.user.login == "claude[bot]" and (.state == "APPROVED" or .state == "CHANGES_REQUESTED" or .state == "DISMISSED")) | "\(.state) \(.commit_id)"' \
+            | tail -n 1)
+
+          state=${last%% *}
+          if [ "$state" != "DISMISSED" ]; then
+            echo "::notice::Claude の承認が取り消されていないため、再レビューを飛ばしました (最後の判定: ${state:-なし})"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # 前回レビューしたコミット。Claude への指示に埋め込むため、SHA の形でなければ渡さない
+          since=${last#* }
+          [[ "$since" =~ ^[0-9a-f]{40}$ ]] || since=""
+          echo "run=true" >> "$GITHUB_OUTPUT"
+          echo "since=$since" >> "$GITHUB_OUTPUT"
+
       - name: "🧠 モデル・effort 決定"
         id: preflight
-        if: steps.credentials.outputs.run == 'true'
+        if: steps.rereview.outputs.run == 'true'
         shell: bash
         env:
           # workflow injection 対策。run: の中で ${{ }} 展開しないこと
@@ -105,7 +144,7 @@ jobs:
           echo "レビューモデル: $model $effort_arg"
 
       - name: Checkout repository
-        if: steps.credentials.outputs.run == 'true'
+        if: steps.rereview.outputs.run == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: refs/pull/${{ env.PR_NUMBER }}/head
@@ -113,7 +152,7 @@ jobs:
           persist-credentials: true
 
       - name: Run Claude Code Review
-        if: steps.credentials.outputs.run == 'true'
+        if: steps.rereview.outputs.run == 'true'
         uses: anthropics/claude-code-action@d535f5172dec02b204866b393d6b20b9b2aaf98d  # v1.0.266
         env:
           # バックグラウンドを有効化しておくとレビューが投稿されずにワークフローが終了するため、無効化
@@ -127,6 +166,7 @@ jobs:
             指摘なしまたは nit / optional のみなら APPROVE とする。
             REQUEST_CHANGES なら、レビューの送信後に mcp__github__update_pull_request (draft: true) で Draft PR に変更すること。
             body は「🧠 Claude コードレビュー <結論> <理由を 1〜2 文>」の 1 行にすること。
+            ${{ steps.rereview.outputs.since && format('これは承認後の push による再レビュー。前回レビューしたコミット {0} 以降の変更 (git diff {0} HEAD) だけに指摘すること。{0} が履歴に無ければ PR 全体を見ること。', steps.rereview.outputs.since) || '' }}
         with:
           # どちらか一方だけが組織シークレットに登録されている前提。空文字は action 側で未設定として扱われる
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

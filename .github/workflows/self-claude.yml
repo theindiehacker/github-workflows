@@ -2,9 +2,9 @@ name: "🧠 Claude"
 
 # 本リポジトリ自身から Claude ワークフローを呼び出す caller (他リポジトリの caller と同じ経路で検証するため)
 on:
-  # PR の作成時 (Draft は Ready にしたとき) にコードレビューする
+  # PR の作成時 (Draft は Ready にしたとき) と、Claude の承認が push で取り消されたときにコードレビューする
   pull_request:
-    types: [opened, ready_for_review]
+    types: [opened, ready_for_review, synchronize]
   issue_comment:
     types: [created]
   pull_request_review_comment:
