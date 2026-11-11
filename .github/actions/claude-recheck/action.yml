@@ -1,0 +1,37 @@
+name: "Claude の承認を戻せるか決める"
+description: >-
+  PR への push (synchronize) で外れた Claude の承認を、「修正の確認」で戻せるかを決める。
+  変更が Claude のコメント箇所 (前後 margin 行) だけなら verify にする。checkout (履歴付き) の後に使う
+
+inputs:
+  pr:
+    description: "PR の番号"
+    required: true
+  margin:
+    description: "コメント箇所の前後に、変更を許す行数"
+    required: false
+    default: "3"
+
+outputs:
+  mode:
+    description: "full (通常のレビュー) / verify (修正の確認) / skip (何もしない)"
+    value: ${{ steps.decide.outputs.mode }}
+  base:
+    description: "verify のとき、前回コメントしたコミット"
+    value: ${{ steps.decide.outputs.base }}
+  dir:
+    description: "verify のとき、Claude に渡す comments.json (前回の指摘) と changes.diff (base からの差分) のディレクトリ"
+    value: ${{ steps.decide.outputs.dir }}
+
+runs:
+  using: composite
+  steps:
+    - name: "承認を戻せるか決める"
+      id: decide
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        PR_NUMBER: ${{ inputs.pr }}
+        MARGIN: ${{ inputs.margin }}
+        EVENT_ACTION: ${{ github.event.action }}
+      run: python3 -I "${GITHUB_ACTION_PATH}/claude-recheck.py"

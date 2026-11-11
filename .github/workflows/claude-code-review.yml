@@ -34,7 +34,7 @@ jobs:
 
     # workflow レベルに移さないこと (無関係なコメントで実行中のレビューが巻き添えキャンセルされる)
     # push (synchronize) では実行中のレビューを取り消さず、終わるのを待つ。
-    # 取り消すと、再レビューの要否の確認で飛ばしたときに、どのレビューも残らない
+    # 取り消すと、承認を戻せるかの判定で飛ばしたときに、どのレビューも残らない
     concurrency:
       group: code-review-pr-${{ github.event.issue.number || github.event.pull_request.number }}
       cancel-in-progress: ${{ github.event.action != 'synchronize' }}
@@ -43,7 +43,7 @@ jobs:
     # closed / merged PR では action が PR ブランチではなく新規ブランチを作る経路に入るため open のみ
     # コメント本文は prefix 判定のみ (Claude Code の署名フッター等の後続文字列を許容するため)
     # PR の作成時 (Draft は Ready にしたとき) は、コメントを待たずにレビューする (依頼し忘れを防ぐ)。
-    # push (synchronize) では、Claude の承認が取り消されたときだけ再レビューする (「🔁 再レビューの要否の確認」)。
+    # push (synchronize) では、外れた Claude の承認を「修正の確認」で戻せるときだけ動く (「🔁 承認を戻せるか決める」)。
     # このリポジトリのブランチ (push できる = 書き込み権限がある) からの PR に限る。fork の PR には secrets が渡らない
     if: >-
       (
@@ -80,45 +80,9 @@ jobs:
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # ruleset の dismiss_stale_reviews_on_push で、承認後の push は承認を取り消す (DISMISSED になる)。
-      # nit を直しただけでも取り消されるため、Claude の最後の判定が取り消された承認なら、push 後の変更を再レビューする。
-      # 最後の判定が変更依頼 (Draft に戻している) や、取り消されていない承認なら飛ばす
-      - name: "🔁 再レビューの要否の確認"
-        id: rereview
-        if: steps.credentials.outputs.run == 'true'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          EVENT_ACTION: ${{ github.event.action }}
-        run: |
-          set -euo pipefail
-
-          if [ "$EVENT_ACTION" != "synchronize" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # インラインコメントの COMMENTED は判定ではないため除く
-          last=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews" \
-            --jq '.[] | select(.user.login == "claude[bot]" and (.state == "APPROVED" or .state == "CHANGES_REQUESTED" or .state == "DISMISSED")) | "\(.state) \(.commit_id)"' \
-            | tail -n 1)
-
-          state=${last%% *}
-          if [ "$state" != "DISMISSED" ]; then
-            echo "::notice::Claude の承認が取り消されていないため、再レビューを飛ばしました (最後の判定: ${state:-なし})"
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # 前回レビューしたコミット。Claude への指示に埋め込むため、SHA の形でなければ渡さない
-          since=${last#* }
-          [[ "$since" =~ ^[0-9a-f]{40}$ ]] || since=""
-          echo "run=true" >> "$GITHUB_OUTPUT"
-          echo "since=$since" >> "$GITHUB_OUTPUT"
-
       - name: "🧠 モデル・effort 決定"
         id: preflight
-        if: steps.rereview.outputs.run == 'true'
+        if: steps.credentials.outputs.run == 'true'
         shell: bash
         env:
           # workflow injection 対策。run: の中で ${{ }} 展開しないこと
@@ -144,15 +108,24 @@ jobs:
           echo "レビューモデル: $model $effort_arg"
 
       - name: Checkout repository
-        if: steps.rereview.outputs.run == 'true'
+        if: steps.credentials.outputs.run == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: refs/pull/${{ env.PR_NUMBER }}/head
           fetch-depth: 0
           persist-credentials: true
 
+      # synchronize 以外は full (通常のレビュー)。synchronize は、承認が外れていて、
+      # 変更が Claude のコメント箇所だけなら verify (修正の確認)、それ以外は skip
+      - name: "🔁 承認を戻せるか決める"
+        id: recheck
+        if: steps.credentials.outputs.run == 'true'
+        uses: $/.github/actions/claude-recheck
+        with:
+          pr: ${{ env.PR_NUMBER }}
+
       - name: Run Claude Code Review
-        if: steps.rereview.outputs.run == 'true'
+        if: steps.recheck.outputs.mode == 'full'
         uses: anthropics/claude-code-action@d535f5172dec02b204866b393d6b20b9b2aaf98d  # v1.0.266
         env:
           # バックグラウンドを有効化しておくとレビューが投稿されずにワークフローが終了するため、無効化
@@ -166,7 +139,6 @@ jobs:
             指摘なしまたは nit / optional のみなら APPROVE とする。
             REQUEST_CHANGES なら、レビューの送信後に mcp__github__update_pull_request (draft: true) で Draft PR に変更すること。
             body は「🧠 Claude コードレビュー <結論> <理由を 1〜2 文>」の 1 行にすること。
-            ${{ steps.rereview.outputs.since && format('これは承認後の push による再レビュー。前回レビューしたコミット {0} 以降の変更 (git diff {0} HEAD) だけに指摘すること。{0} が履歴に無ければ PR 全体を見ること。', steps.rereview.outputs.since) || '' }}
         with:
           # どちらか一方だけが組織シークレットに登録されている前提。空文字は action 側で未設定として扱われる
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -181,3 +153,40 @@ jobs:
           # 判定レビューは Claude 自身に送信させる (指示は APPEND_SYSTEM_PROMPT)。action の Claude App
           # トークンで動く MCP を経由するため、投稿者が claude[bot] になり他のコメントと一致する
           prompt: '/code-review --comment ${{ env.PR_NUMBER }}'
+
+      # 通常のレビューを繰り返すと、毎回新しい nit が付いて終わらないため、新しい指摘は出させない。
+      # 指摘への対応の良し悪しでは止めず、新しいバグのときだけ変更依頼にする
+      - name: "Claude で修正を確認"
+        if: steps.recheck.outputs.mode == 'verify'
+        uses: anthropics/claude-code-action@d535f5172dec02b204866b393d6b20b9b2aaf98d  # v1.0.266
+        env:
+          # バックグラウンドを有効化しておくとレビューが投稿されずにワークフローが終了するため、無効化
+          CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          track_progress: 'true'
+          show_full_output: false
+          # インラインコメントのツールは渡さない (新しい指摘を出させない)
+          claude_args: |
+            --model ${{ steps.preflight.outputs.model }}
+            --effort low
+            --max-turns 30
+            --add-dir ${{ steps.recheck.outputs.dir }}
+            --allowedTools "Read,mcp__github__create_and_submit_pull_request_review,mcp__github__update_pull_request"
+          prompt: |
+            PR #${{ env.PR_NUMBER }} の、前回のレビューの後に push された修正を確認する。/code-review は使わず、通常のコードレビューもしないこと。
+
+            - 前回の指摘 (path・行・本文): ${{ steps.recheck.outputs.dir }}/comments.json
+            - 指摘を付けたコミット ${{ steps.recheck.outputs.base }} から HEAD までの差分: ${{ steps.recheck.outputs.dir }}/changes.diff
+              (必要ならリポジトリのファイルも読んでよい)
+
+            確かめるのは、差分が新しいバグ・不具合を入れていないかだけ。
+            指摘を直していないこと・指摘と別の直し方をしたことは問題にしない。
+            新しい指摘・nit・optional は出さず、インラインコメントも投稿しないこと。
+
+            確認を終えたら、必ず mcp__github__create_and_submit_pull_request_review で PR にレビューを送信すること。
+            event は、新しいバグ・不具合があれば REQUEST_CHANGES、なければ APPROVE とする。
+            REQUEST_CHANGES なら、レビューの送信後に mcp__github__update_pull_request (draft: true) で Draft PR に変更すること。
+            body は「🧠 Claude コードレビュー (修正の確認) <結論> <理由を 1〜2 文>」の 1 行にすること。
+            REQUEST_CHANGES の理由には、問題の箇所 (path:line) を書くこと。

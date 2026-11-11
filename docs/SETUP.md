@@ -194,7 +194,7 @@ git ls-remote https://github.com/theindiehacker/github-workflows 'refs/tags/v1.0
 
 3. main にマージ後、PR を作るとコードレビューが自動で投稿されることを確認する (再レビューは PR に `/code-review` とコメントする)
 
-Claude の承認後に push すると、ruleset (「✅ PR の承認を必須化」の `dismiss_stale_reviews_on_push`) が承認を取り消す。そのときは自動で再レビューし、前回レビューしたコミット以降の変更に問題がなければ承認し直す。呼び出し側の `on.pull_request.types` に `synchronize` が無いと動かないため、既存の呼び出し側は足す。
+Claude の承認後に push すると、ruleset (「✅ PR の承認を必須化」の `dismiss_stale_reviews_on_push`) が承認を外す。変更が Claude のコメント箇所 (前後 3 行) だけなら、新しいバグが無いかだけを確かめて (新しい指摘は出さない) 承認し直す。ほかの箇所も変えたときは自動では戻さないので、`/code-review` で再レビューを頼む。呼び出し側の `on.pull_request.types` に `synchronize` が無いと動かないため、既存の呼び出し側は足す。
 
 セキュリティレビューは、コメント (`/security-review`) で頼んだときだけ動く。PR の作成時 (Draft は Ready にしたとき) にも動かすには、`security-review` job の `if` に `code-review` job と同じ `pull_request` の条件を足す (FastShip の `/dev:setup` が足す)。
 
