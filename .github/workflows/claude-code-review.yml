@@ -139,6 +139,7 @@ jobs:
             指摘なしまたは nit / optional のみなら APPROVE とする。
             REQUEST_CHANGES なら、レビューの送信後に mcp__github__update_pull_request (draft: true) で Draft PR に変更すること。
             body は「🧠 Claude コードレビュー <結論> <理由を 1〜2 文>」の 1 行にすること。
+            commitID には ${{ steps.recheck.outputs.head }} (レビューしたコミット) を指定すること。
         with:
           # どちらか一方だけが組織シークレットに登録されている前提。空文字は action 側で未設定として扱われる
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -186,7 +187,28 @@ jobs:
             新しい指摘・nit・optional は出さず、インラインコメントも投稿しないこと。
 
             確認を終えたら、必ず mcp__github__create_and_submit_pull_request_review で PR にレビューを送信すること。
+            commitID には ${{ steps.recheck.outputs.head }} (確認したコミット) を指定すること。
             event は、新しいバグ・不具合があれば REQUEST_CHANGES、なければ APPROVE とする。
             REQUEST_CHANGES なら、レビューの送信後に mcp__github__update_pull_request (draft: true) で Draft PR に変更すること。
             body は「🧠 Claude コードレビュー (修正の確認) <結論> <理由を 1〜2 文>」の 1 行にすること。
             REQUEST_CHANGES の理由には、問題の箇所 (path:line) を書くこと。
+
+      # max-turns の超過などで判定が送られないと、承認が外れたまま何も出ないため、送られたかを確かめる
+      - name: "判定の送信を確かめる"
+        if: steps.recheck.outputs.mode == 'full' || steps.recheck.outputs.mode == 'verify'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ steps.recheck.outputs.head }}
+        run: |
+          set -euo pipefail
+
+          # --jq はページごとに効くため、ページの件数を足す
+          count=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews" \
+            --jq "[.[] | select(.user.login == \"claude[bot]\" and .commit_id == \"$HEAD_SHA\" and .state != \"COMMENTED\")] | length" \
+            | awk '{ n += $1 } END { print n + 0 }')
+
+          if [ "$count" -eq 0 ]; then
+            echo "::error::Claude の判定 (承認・変更依頼) が $HEAD_SHA に送られていません。/code-review で再レビューを依頼してください"
+            exit 1
+          fi

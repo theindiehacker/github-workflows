@@ -13,6 +13,9 @@ inputs:
     default: "3"
 
 outputs:
+  head:
+    description: "レビューするコミット (checkout した HEAD)。Claude が判定を送るときに commitID に指定する"
+    value: ${{ steps.decide.outputs.head }}
   mode:
     description: "full (通常のレビュー) / verify (修正の確認) / skip (何もしない)"
     value: ${{ steps.decide.outputs.mode }}
@@ -34,4 +37,6 @@ runs:
         PR_NUMBER: ${{ inputs.pr }}
         MARGIN: ${{ inputs.margin }}
         EVENT_ACTION: ${{ github.event.action }}
+        # synchronize の payload の時点 (push の時点) の PR の更新日時
+        PUSHED_AT: ${{ github.event.pull_request.updated_at }}
       run: python3 -I "${GITHUB_ACTION_PATH}/claude-recheck.py"

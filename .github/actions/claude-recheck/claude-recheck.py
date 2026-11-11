@@ -47,27 +47,37 @@ def skip(reason: str) -> None:
     output(mode="skip")
 
 
-def gh_list(path: str) -> list[dict]:
-    """GitHub API の一覧を全ページ取り、古い順に並べる"""
-    # 引数はシェルを通さずに渡す。S603 / S607 は CI の --select S でだけ有効になり、
-    # 既定の ruff check はその noqa を不要 (RUF100) とするため、RUF100 も並べる
-    result = subprocess.run(  # noqa: S603, RUF100
-        ["gh", "api", "--paginate", "--slurp", path],  # noqa: S607, RUF100
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    items = [item for page in json.loads(result.stdout) for item in page]
-    return sorted(items, key=lambda item: item["id"])
-
-
+# 失敗すると CalledProcessError。引数はシェルを通さずに渡し、コマンド名は固定の文字列にする
+# (Semgrep の r/all は、固定の文字列で始まらない subprocess を ERROR にする)。
+# S603 / S607 は CI の --select S でだけ有効になり、既定の ruff check はその noqa を不要 (RUF100) とするため、RUF100 も並べる
 def git(*args: str) -> str:
+    """UTF-8 でないファイルの差分でも落ちないよう、読めない文字は置き換える
+    (パスが置き換わると、コメントのパスと一致せずコメント箇所の外になる)
+    """
     return subprocess.run(  # noqa: S603, RUF100
         ["git", *args],  # noqa: S607, RUF100
         check=True,
         capture_output=True,
         text=True,
+        errors="replace",
     ).stdout
+
+
+def gh(*args: str) -> str:
+    return subprocess.run(  # noqa: S603, RUF100
+        ["gh", *args],  # noqa: S607, RUF100
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+
+def gh_list(path: str) -> list[dict]:
+    """GitHub API の一覧を全ページ取り、古い順に並べる"""
+    pages = json.loads(gh("api", "--paginate", "--slurp", path))
+    return sorted(
+        (item for page in pages for item in page), key=lambda item: item["id"]
+    )
 
 
 def by_bot(item: dict) -> bool:
@@ -108,18 +118,47 @@ def outside(
             if not (m := HUNK.match(line)):
                 continue
             start, count = int(m[1]), int(m[2] or 1)
-            # count が 0 なら start 行の後ろへの挿入
-            first, last = (
-                (start, start + 1) if count == 0 else (start, start + count - 1)
-            )
-            if not any(
-                s - margin <= first and last <= e + margin for s, e in regions[path]
-            ):
-                return f"{path}:{first}"
+            # count が 0 なら start 行の後ろへの挿入。
+            # 1 つの hunk が隣り合うコメント箇所にまたがることがあるため、行ごとに見る
+            lines = [start, start + 1] if count == 0 else range(start, start + count)
+            for n in lines:
+                if not any(s - margin <= n <= e + margin for s, e in regions[path]):
+                    return f"{path}:{n}"
     return None
 
 
+def dismiss_late_approval(pulls: str, last: dict) -> None:
+    """この push の後に送られた承認を外す。
+
+    push の前に始まったレビューが、push の後に承認を送ったもの (前の HEAD を見ている)。
+    push の時点では無かったため dismiss_stale_reviews_on_push では外れず、
+    レビューしていないコミットに承認が残る
+    """
+    pushed_at = os.environ.get("PUSHED_AT", "")
+    if not pushed_at or last["state"] != "APPROVED" or last["submitted_at"] < pushed_at:
+        return
+    gh(
+        "api",
+        "--method",
+        "PUT",
+        f"{pulls}/reviews/{last['id']}/dismissals",
+        "-f",
+        "event=DISMISS",
+        "-f",
+        "message=push の後に、前のコミットを見て送られた承認のため外しました",
+    )
+    annotate("notice", "push の後に送られた Claude の承認を外しました")
+    last["state"] = "DISMISSED"
+
+
 def main() -> None:
+    # Claude にはこのコミットを指定して判定を送らせる (送る時点の HEAD に付くと、
+    # レビュー中に push されたコミットにレビューなしで承認が付く)
+    head = git("rev-parse", "HEAD").strip()
+    if not SHA.fullmatch(head):
+        raise SystemExit(f"HEAD が SHA ではありません: {head}")
+    output(head=head)
+
     if os.environ["EVENT_ACTION"] != "synchronize":
         output(mode="full")
         return
@@ -128,6 +167,8 @@ def main() -> None:
     verdicts = [
         r for r in gh_list(f"{pulls}/reviews") if by_bot(r) and r["state"] in VERDICTS
     ]
+    if verdicts:
+        dismiss_late_approval(pulls, verdicts[-1])
     if not verdicts or verdicts[-1]["state"] != "DISMISSED":
         state = verdicts[-1]["state"] if verdicts else "なし"
         skip(f"Claude の承認が外れていない (最後の判定: {state})")
@@ -147,12 +188,9 @@ def main() -> None:
     if not SHA.fullmatch(base or ""):
         skip("前回コメントしたコミットが分からない")
         return
-    ancestor = subprocess.run(  # noqa: S603, RUF100
-        ["git", "merge-base", "--is-ancestor", base, "HEAD"],  # noqa: S607, RUF100
-        capture_output=True,
-        check=False,
-    )
-    if ancestor.returncode != 0:
+    try:
+        git("merge-base", "--is-ancestor", base, "HEAD")
+    except subprocess.CalledProcessError:
         skip("前回コメントしたコミットが PR の履歴に無い (force-push など)")
         return
 

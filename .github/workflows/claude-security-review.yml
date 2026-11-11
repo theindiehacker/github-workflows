@@ -40,6 +40,7 @@ jobs:
     # closed / merged PR では action が PR ブランチではなく新規ブランチを作る経路に入るため open のみ
     # コメント本文は prefix 判定のみ (Claude Code の署名フッター等の後続文字列を許容するため)
     # 呼び出し側が pull_request を渡したときは、PR の作成時 (Draft は Ready にしたとき) にもレビューする (FastShip の実装は Ready にしてレビューを頼む)。
+    # push (synchronize) では動かさない (呼び出し側は、コードレビューの承認を戻すために synchronize を渡す)。
     # このリポジトリのブランチ (push できる = 書き込み権限がある) からの PR に限る。fork の PR には secrets が渡らない
     if: >-
       (
@@ -51,6 +52,7 @@ jobs:
         contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
       ) || (
         github.event_name == 'pull_request' &&
+        github.event.action != 'synchronize' &&
         !github.event.pull_request.draft &&
         github.event.pull_request.head.repo.full_name == github.repository &&
         github.event.pull_request.user.type != 'Bot'
