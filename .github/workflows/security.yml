@@ -128,8 +128,8 @@ jobs:
         uses: $/.github/actions/zizmor
         with:
           # renovate: datasource=github-release-attachments depName=zizmorcore/zizmor
-          version: v1.31.1
-          sha256: d185f726bdaf92df78273217dfdd24ebcd6b0ef48cf3ce776ff5762b6e138c99
+          version: v1.32.0
+          sha256: bb110cc765eca9cd7efb2e284a956be5974c60027b0970f16397d86208a9957b
           # 設定ファイルは全ファイルの検出結果に影響するため、変更時は repo 全体をスキャン
           scan-all: ${{ steps.filter.outputs.zizmor_config }}
           targets: ${{ steps.filter.outputs.zizmor_targets_files }}
@@ -141,8 +141,8 @@ jobs:
         uses: $/.github/actions/semgrep
         with:
           # renovate: datasource=docker depName=semgrep/semgrep
-          version: 1.183.0
-          digest: sha256:2e45517a85e13a9cca14a2a00df6bb48affd66b8ebfae1b0991cd57578362fb0
+          version: 1.184.0
+          digest: sha256:cc1b68266f267878b39739373ea9985b9a78e5d64497dd875c8de100b22695ed
 
       - name: "Trivy の検知する severity / 抑制ファイルを決定"
         id: policy
