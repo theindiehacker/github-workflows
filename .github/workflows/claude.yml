@@ -32,6 +32,11 @@ jobs:
       issues: write
       id-token: write
 
+    env:
+      # mise.toml の hooks を動かさない。postinstall の lefthook install で git フックが入ると、
+      # Claude の commit が lefthook (Private の remote 設定を取りに行く) で止まるため
+      MISE_NO_HOOKS: "1"
+
     # concurrency は付けないこと。同じ Issue / PR 単位で直列化すると待機枠が 1 件しかなく、
     # 実行中に届いた 2 件目以降の依頼が黙ってキャンセルされる
 
@@ -73,6 +78,12 @@ jobs:
           # false にしないこと。tag mode の action は checkout が残す認証で PR ブランチを fetch する (.github/ghalint.yml で除外)
           persist-credentials: true
 
+      - name: Install tools with mise
+        # mise.toml / mise.lock の版で uv・task などを入れる (ランナーには無い)。mise.toml が無ければ mise だけが入る。
+        # 失敗しても Claude が自分で入れられるため、止めない
+        continue-on-error: true
+        uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785  # v5.2.8
+
       - name: Run Claude Code
         uses: anthropics/claude-code-action@c0949c50a78c1ec8ce2647db36629b870e715d0c  # v1.0.268
         env:
@@ -83,9 +94,12 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           show_full_output: false
-          # node・npx・bun は任意のコードを実行できるが、許可する。起動できるのは書き込み権限のあるメンバーだけ。
+          # 言語・パッケージマネージャーがリポジトリごとに違うため、Bash はすべて許可する。
+          # 呼び出し元は信頼できる Private リポジトリに限ること。起動できるのは書き込み権限のあるメンバーだけ。
+          # 既定ブランチへの直接 push・force push はルールセットが防ぐ (terraform/github/rulesets.tf)。
+          # WebFetch・WebSearch は変更履歴や移行ガイドを読むため (Bash で curl も使えるので、許す範囲は増えない)
           claude_args: |
             --model claude-opus-5-5
             --max-turns 200
             ${{ inputs.effort && format('--effort {0}', inputs.effort) }}
-            --allowedTools "Bash(node:*),Bash(npx:*),Bash(bun:*)"
+            --allowedTools "Bash,WebFetch,WebSearch"

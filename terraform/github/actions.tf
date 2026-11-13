@@ -27,6 +27,7 @@ resource "github_actions_organization_permissions" "this" {
       "hashicorp/setup-terraform@*",
       # app.fastship.jp の CI（py-check.yml / py-test.yml）が、mise.toml・mise.lock の版で task・uv などを入れるために使用する
       # （組織の必須ワークフローが効かない個人ユーザーのリポジトリでも CI を動かすため）
+      # claude.yml も、@claude が uv・task などを使えるように使用する
       "jdx/mise-action@*",
       # anthropics/claude-code-action が内部で使用する
       "oven-sh/setup-bun@*",
