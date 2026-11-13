@@ -196,7 +196,7 @@ git ls-remote https://github.com/theindiehacker/github-workflows 'refs/tags/v1.0
 
 Claude の承認後に push すると、ruleset (「✅ PR の承認を必須化」の `dismiss_stale_reviews_on_push`) が承認を外す。変更が Claude のコメント箇所 (前後 3 行) だけなら、新しいバグが無いかだけを確かめて (新しい指摘は出さない) 承認し直す。ほかの箇所も変えたときは自動では戻さないので、`/code-review` で再レビューを頼む。呼び出し側の `on.pull_request.types` に `synchronize` が無いと動かないため、既存の呼び出し側は足す。
 
-セキュリティレビューは、コメント (`/security-review`) で頼んだときだけ動く。PR の作成時 (Draft は Ready にしたとき) にも動かすには、`security-review` job の `if` に `code-review` job と同じ `pull_request` の条件を足す (FastShip の `/dev:setup` が足す)。
+セキュリティレビューは、コメント (`/security-review`) で頼んだときだけ動く。PR の作成時 (Draft は Ready にしたとき) にも動かすには、`security-review` job の `if` に `code-review` job と同じ `pull_request` の条件を足す。
 
 > 💡 本リポジトリは `github-workflows` → `devops` → `github-workflows` と改名した。git clone や API は旧名からリダイレクトされるが、`uses:` はリダイレクトされず、旧名の `uses: theindiehacker/devops/...` はワークフローの起動時点で失敗する。そのため `theindiehacker/github-workflows/...` に書き換える（旧名 `devops` でリポジトリを作り直すと参照先が乗っ取られるため、旧名は再利用しない）。ruleset はリポジトリ名ではなく ID で紐付くため、改名後の再設定は不要
 

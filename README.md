@@ -69,43 +69,7 @@ Claude Code on the web で pre-commit を動かすには、`.claude/settings.jso
 }
 ```
 
-## 🧩 Claude Code プラグイン
-マーケットプレイス（`fastship`）は [theindiehacker/fastship-plugin](https://github.com/theindiehacker/fastship-plugin) に移した。導入・更新の手順は同リポジトリを参照。
-
 ## ❓ 使い方
 ### 🎊 セットアップ
 
 [docs/SETUP.md](./docs/SETUP.md) を参照して、実行してください。
-
-### 🤖 Claude Code on Web
-
-#### 🏷️ Issue にラベルを付けたら設計・開発を始める
-
-```mermaid
-graph LR;
-    issue("📝 Issue") -->|<code>claude:implement</code> ラベル| routine("⏰ ルーティン<br/>リポジトリ名 / 実装")
-    routine -->|起動| session("🧠 Claude Code on the web")
-    session -->|実装・PR 作成| pr("🔀 Pull Request")
-```
-
-`/dev:setup` を実行すると、対象リポジトリに `claude:implement` ラベルを作り、実行者の claude.ai アカウントに「`<リポジトリ名> / 実装`」ルーティンを用意する（手順の詳細は [plugins/dev/skills/setup/SKILL.md](./plugins/dev/skills/setup/SKILL.md) の「6.」）。
-
-> ⚠️ ルーティンは実行者個人の claude.ai アカウントに紐づき、チームでは共有されない。Claude GitHub App が対象リポジトリにインストールされている必要がある。
->
-> トリガーは「Issue のラベルに `claude:implement` を含む」で判定するため、`claude:implement` が付いた Issue に別のラベルを足したときも起動しうる。
-
-<details><summary>✋ <b>手動でルーティンを作る場合</b></summary>
-
-https://claude.ai/code/routines にアクセスして、以下のように設定する
-
-
-<img src="docs/Claude%20Code%20on%20Web/1.png" width="500" alt="「新しいルーティン」"><br/>
-
-<img src="docs/Claude%20Code%20on%20Web/2.png" width="500" alt="「リポジトリを選択」"><br/>
-
-<img src="docs/Claude%20Code%20on%20Web/3.png" width="500" alt="「GitHubイベント」"><br/>
-
-<img src="docs/Claude%20Code%20on%20Web/4.png" width="500" alt="「課題:ラベル付き」"><br/>
-*任意のラベル名(画面では `claude:implement`)を指定する*
-
-</details>
