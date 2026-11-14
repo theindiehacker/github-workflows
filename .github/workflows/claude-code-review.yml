@@ -4,9 +4,10 @@ on:
   workflow_call:
     inputs:
       effort:
-        description: "既定の effort (low / medium / high / xhigh / max)。コメントでの指定が優先。空なら Claude Code の既定値"
+        description: "既定の effort (low / medium / high / xhigh / max)。コメントでの指定が優先。空を渡すと Claude Code の既定値"
         type: string
         required: false
+        default: high
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN:
         description: "claude setup-token で発行した OAuth トークン（ANTHROPIC_API_KEY とどちらか一方）"
