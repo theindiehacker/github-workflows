@@ -4,6 +4,8 @@ set -euo pipefail
 
 # コンテナは root で動くため、runner が checkout した作業ツリーを git に信頼させる
 # --disable-nosem: インライン nosemgrep コメントを無効化（repo 側の抑制は .semgrepignore に限定する）
+# --exclude-rule: 誤検知が多いルールを全 repo で外す。typescript.mcp.security.mcp-ssrf-typescript は、MCP のツールの引数を
+#   渡す任意の関数呼び出しを SSRF にするため外し、rules/mcp.yml の mcp-ssrf で置き換える
 docker run --rm \
   --volume "${GITHUB_WORKSPACE}:/src" --workdir /src \
   --volume "${GITHUB_ACTION_PATH}/rules:/rules:ro" \
@@ -19,6 +21,7 @@ docker run --rm \
   --exclude-rule gitlab.nodejs_scan.javascript-ssrf-rule-node_ssrf \
   --exclude-rule python.lang.correctness.return-in-init.return-in-init \
   --exclude-rule python.lang.maintainability.useless-innerfunction.useless-inner-function \
+  --exclude-rule typescript.mcp.security.mcp-ssrf-typescript.mcp-ssrf-typescript \
   --error \
   --metrics off \
   --disable-version-check \

@@ -1,0 +1,69 @@
+rules:
+  # r/all の typescript.mcp.security.mcp-ssrf-typescript は、sink の `$AXIOS($URL, ...)` が任意の関数呼び出しに当たり、
+  # ツールの引数を文字列に入れて返すだけのコード (text(`${query}`) など) も SSRF にするため、semgrep.sh で外し、ここで置き換える
+  - id: mcp-ssrf
+    mode: taint
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: MCP のツール・プロンプト・リソースの引数が外部通信の宛先になっています (SSRF)。宛先を許可リストで検証してください。
+    metadata:
+      category: security
+      technology: [mcp]
+      cwe: "CWE-918: Server-Side Request Forgery (SSRF)"
+      confidence: MEDIUM
+    pattern-sources:
+      - patterns:
+          - pattern-either:
+              - pattern-inside: |
+                  $SRV.$REGISTER(..., async (..., $P, ...) => { ... })
+              - pattern-inside: |
+                  $SRV.$REGISTER(..., (..., $P, ...) => { ... })
+              - pattern-inside: |
+                  $SRV.$REGISTER(..., async function (..., $P, ...) { ... })
+              - pattern-inside: |
+                  $SRV.$REGISTER(..., function (..., $P, ...) { ... })
+          - metavariable-regex:
+              metavariable: $REGISTER
+              regex: ^(registerTool|tool|registerPrompt|prompt|registerResource|resource|setRequestHandler)$
+          - focus-metavariable: $P
+    pattern-sanitizers:
+      - pattern: Number(...)
+      - pattern: parseInt(...)
+      - pattern: parseFloat(...)
+    # nextjs.yml の nextjs-ssrf と同じ sink
+    pattern-sinks:
+      - patterns:
+          - pattern-either: &ssrf-calls
+              - pattern: fetch($URL, ...)
+              - pattern: axios($URL, ...)
+              - pattern: got($URL, ...)
+              - pattern: ky($URL, ...)
+              - pattern: request($URL, ...)
+              - patterns:
+                  - pattern: $CLIENT.$METHOD($URL, ...)
+                  - metavariable-regex:
+                      metavariable: $CLIENT
+                      regex: ^(axios|got|ky)$
+              - patterns:
+                  - pattern: $CLIENT.$METHOD($URL, ...)
+                  - metavariable-regex:
+                      metavariable: $CLIENT
+                      regex: ^(http|https|undici)$
+                  - metavariable-regex:
+                      metavariable: $METHOD
+                      regex: ^(get|request|fetch)$
+          - focus-metavariable: $URL
+          # 宛先のホストが固定の URL (パスだけが変わる) は SSRF にしない。`${x}/ で始まるものは次の sink で x だけを見る
+          - metavariable-regex:
+              metavariable: $URL
+              regex: ^(?!`(https?://[^/$`]+/|\$\{[^}]+\}/(?![/\\])))
+      - patterns:
+          - pattern-either: *ssrf-calls
+          - metavariable-regex:
+              metavariable: $URL
+              regex: ^`\$\{[^}]+\}/(?![/\\])
+          - metavariable-pattern:
+              metavariable: $URL
+              pattern: |
+                `${$HOST}...`
+          - focus-metavariable: $HOST
