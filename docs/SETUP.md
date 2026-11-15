@@ -115,7 +115,7 @@ terraform -chdir=terraform/github apply
 | `bundle-size-measure` / `bundle-size-comment` | フロントエンド（Next.js / Astro）の JS・CSS の gzip 後のサイズの増減を PR にコメント（報告だけで失敗しない） |
 
 > 必須ワークフローは、対象 repo のコードを実行してよい（`style.yml` の `python` / `typescript` job の `uv sync` / `bun install` による依存導入と、その環境上で動く ty / lint-imports / deptry / Biome / knip / tsc、`terraform` job の `terraform init` / `validate` / `test` が実行する provider・module、`bundle-size-measure` job の `bun install` とビルドなど）。ただし次を守る。
-> - `permissions` は read のみとし、secrets を使わない（例外: `terraform` job にだけ `id-token: write` を付け、private の Module Registry（registry.fastship.jp）からモジュールを取得できるよう、[registry-fastship-action](https://github.com/theindiehacker/registry-fastship-action) の credentials helper を入れる。helper は job の後の step からも使えるが、`id-token: write` の job ではどの step も元から ID トークンを取れるため、取れる範囲は広がらない。fork からの PR では ID トークンを取得できない。PR にコメントする `bundle-size-comment` job にだけ `pull-requests: write` を付ける。この job は checkout せず、PR のコードを動かさない）。トリガーは `pull_request` とし、`pull_request_target` では動かさない
+> - `permissions` は read のみとし、secrets を使わない（例外: `terraform` job にだけ `id-token: write` を付け、private の Module Registry（registry.theindiehacker.io）からモジュールを取得できるよう、[registry-fastship-action](https://github.com/theindiehacker/registry-fastship-action) の credentials helper を入れる。helper は job の後の step からも使えるが、`id-token: write` の job ではどの step も元から ID トークンを取れるため、取れる範囲は広がらない。fork からの PR では ID トークンを取得できない。PR にコメントする `bundle-size-comment` job にだけ `pull-requests: write` を付ける。この job は checkout せず、PR のコードを動かさない）。トリガーは `pull_request` とし、`pull_request_target` では動かさない
 > - `actions/checkout` は `persist-credentials: false` にする
 > - PR のコードを実行する処理は `lint` と別の job にし、対象のファイルがあるときだけ動かす（常に動く `lint` の job では PR のコードを実行しない）
 > - repo の環境に依存して失敗し得る前提は、下の「導入時の前提」に書く。対応できない repo は「例外運用」で外す
@@ -138,7 +138,7 @@ terraform -chdir=terraform/github apply
 7. `terraform test` がクラウドの認証情報を必要とする（認証情報は渡さないため、`command = plan` と `mock_provider` で完結するテストだけが通る）
 8. Terraform 1.16.0（`style.yml` で固定）で動かない `required_version` を宣言している
 9. tflint（`style.yml` の固定設定）の違反がある、または `.tf` に `tflint-ignore` コメントがある（違反は変更したディレクトリのみ検査するが、`tflint-ignore` の禁止は repo 全体が対象）
-10. registry.fastship.jp のモジュールを使っているのに、その repo の org が registry.fastship.jp の契約企業に登録されていない、または fork からの PR である（`terraform init` が 401 で失敗する）
+10. registry.theindiehacker.io のモジュールを使っているのに、その repo が theindiehacker の組織のものでない、または fork からの PR である（`terraform init` が 401 で失敗する）
 
 バンドルサイズの計測は、サイズが増えても、ビルドの失敗やタイムアウト（40 分）でも fail しないため、前提は無い。ただし次の場合は計測されない、または一部だけが計測される。
 
