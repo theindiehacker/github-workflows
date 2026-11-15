@@ -280,7 +280,7 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
-      id-token: write  # registry.fastship.jp の ID トークン（docs/SETUP.md「2.」の例外）
+      id-token: write  # registry.theindiehacker.io の ID トークン（docs/SETUP.md「2.」の例外）
     env:
       TF_IN_AUTOMATION: "1"
       TF_INPUT: "0"
@@ -312,13 +312,15 @@ jobs:
           restore-keys: |
             terraform-plugins-${{ runner.os }}-${{ runner.arch }}-
 
-      # private の Module Registry（registry.fastship.jp）の credentials helper を入れる。terraform init がモジュールを取得するときに ID トークンを取る。
+      # private の Module Registry（registry.theindiehacker.io）の credentials helper を入れる。terraform init がモジュールを取得するときに ID トークンを取る。
       # fork からの PR では ID トークンを取得できないため、失敗しても続ける（registry を使わない repo には影響しない）。
-      # TF_TOKEN_registry_fastship_jp は渡さない。helper より優先されるため、空でも helper が使われなくなる
-      - name: "registry.fastship.jp の credentials helper を入れる"
+      # TF_TOKEN_registry_theindiehacker_io は渡さない。helper より優先されるため、空でも helper が使われなくなる
+      - name: "registry.theindiehacker.io の credentials helper を入れる"
         if: steps.dirs.outputs.dirs != '[]'
         continue-on-error: true
-        uses: theindiehacker/registry-fastship-action@c15aca6d7eef88d4958a4df2cca0964ada4fd872  # v2.1.0
+        uses: theindiehacker/registry-fastship-action@4d3b8b7ee89c7816269b84dd2b4d507ddce8253d  # v3.3.0
+        with:
+          host: registry.theindiehacker.io
 
       - name: "terraform init"
         id: init
