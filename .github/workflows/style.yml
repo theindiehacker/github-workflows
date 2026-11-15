@@ -204,8 +204,8 @@ jobs:
         uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337  # v6.3.2
         with:
           # renovate: datasource=github-release-attachments depName=terraform-linters/tflint
-          tflint_version: v0.65.0
-          checksums: d4c545ed2e29d6338604b586f34f544f380f70f243aa72f7b484713835eaec61
+          tflint_version: v0.66.0
+          checksums: 22be11cadc25cd02401e94c0ccc91aa63467debb8485c2a755d98f4c0a9d1e2e
 
       - name: "🏗️ tflint"
         if: ${{ !cancelled() && steps.filter.outputs.tflint == 'true' }}
