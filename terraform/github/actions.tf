@@ -17,6 +17,7 @@ resource "github_actions_organization_permissions" "this" {
       # python（style.yml）が使用する
       "astral-sh/ruff-action@*",
       "astral-sh/setup-uv@*",
+      "aws-actions/configure-aws-credentials@*",
       "docker/setup-buildx-action@*",
       "docker/build-push-action@*",
       "dorny/paths-filter@*",
