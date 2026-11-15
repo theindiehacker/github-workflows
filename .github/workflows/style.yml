@@ -318,7 +318,7 @@ jobs:
       - name: "registry.theindiehacker.io の credentials helper を入れる"
         if: steps.dirs.outputs.dirs != '[]'
         continue-on-error: true
-        uses: theindiehacker/registry-fastship-action@4d3b8b7ee89c7816269b84dd2b4d507ddce8253d  # v3.3.0
+        uses: theindiehacker/registry-fastship-action@b6abeb80ee7097722571fa396a43341673e24067  # v4.0.0
         with:
           host: registry.theindiehacker.io
 
