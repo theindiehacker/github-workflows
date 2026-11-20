@@ -85,7 +85,7 @@ jobs:
         uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785  # v5.2.8
 
       - name: Run Claude Code
-        uses: anthropics/claude-code-action@4fa93a88de49bbef68b10eb15aabedf28ca0e1ed  # v1.0.271
+        uses: anthropics/claude-code-action@f3b070c88125d33dbae5653df5f143101d4ea9dc  # v1.0.276
         env:
           # バックグラウンドを有効化しておくと応答が投稿されずにワークフローが終了するため、無効化
           CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
