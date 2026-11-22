@@ -82,7 +82,7 @@ jobs:
         # mise.toml / mise.lock の版で uv・task などを入れる (ランナーには無い)。mise.toml が無ければ mise だけが入る。
         # 失敗しても Claude が自分で入れられるため、止めない
         continue-on-error: true
-        uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785  # v5.2.8
+        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d  # v5.2.9
 
       - name: Run Claude Code
         uses: anthropics/claude-code-action@f3b070c88125d33dbae5653df5f143101d4ea9dc  # v1.0.276
