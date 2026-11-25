@@ -82,10 +82,10 @@ jobs:
         # mise.toml / mise.lock の版で uv・task などを入れる (ランナーには無い)。mise.toml が無ければ mise だけが入る。
         # 失敗しても Claude が自分で入れられるため、止めない
         continue-on-error: true
-        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d  # v5.2.9
+        uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a  # v5.2.10
 
       - name: Run Claude Code
-        uses: anthropics/claude-code-action@cc98b3ae241b0fcfb6a42a2690751afffecb4452  # v1.0.278
+        uses: anthropics/claude-code-action@5a856893345e332afa621934082d8c660c26d689  # v1.0.282
         env:
           # バックグラウンドを有効化しておくと応答が投稿されずにワークフローが終了するため、無効化
           CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
