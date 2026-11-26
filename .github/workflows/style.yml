@@ -30,7 +30,7 @@ env:
   # renovate: datasource=pypi depName=uv
   UV_VERSION: "0.13.9"
   # renovate: datasource=pypi depName=ruff
-  RUFF_VERSION: "0.17.5"
+  RUFF_VERSION: "0.17.6"
   # renovate: datasource=pypi depName=ty
   TY_VERSION: "0.0.107"
   # renovate: datasource=pypi depName=import-linter
@@ -446,8 +446,8 @@ jobs:
         uses: $/.github/actions/install-bun
         with: &bun
           # renovate: datasource=github-release-attachments depName=oven-sh/bun
-          version: bun-v1.4.4
-          sha256: bf8ccbfb2b0b80159e0f9a6d15c55317add8077534dbc6130a3edb52fccb395c
+          version: bun-v1.4.5
+          sha256: 94559b3b528995a49452f9f2404cec74f2efd7d06e0a000a8cd214b02c3666eb
 
       # bun install が失敗した場合のみ後続を skip する。biome / knip / tsc は互いに独立して実行するため、
       # 1 回の run で全ての違反が出揃う
