@@ -128,7 +128,7 @@ jobs:
       - name: Run Claude Code Review
         id: review
         if: steps.recheck.outputs.mode == 'full'
-        uses: anthropics/claude-code-action@c84e279f859e2591391e95bd309286eb111c345f  # v1.0.284
+        uses: anthropics/claude-code-action@acfe7992852970efb4fee683d63d628e3e52df67  # v1.0.286
         env:
           # バックグラウンドを有効化しておくとレビューが投稿されずにワークフローが終了するため、無効化
           CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
@@ -162,7 +162,7 @@ jobs:
       - name: "Claude で修正を確認"
         id: verify
         if: steps.recheck.outputs.mode == 'verify'
-        uses: anthropics/claude-code-action@c84e279f859e2591391e95bd309286eb111c345f  # v1.0.284
+        uses: anthropics/claude-code-action@acfe7992852970efb4fee683d63d628e3e52df67  # v1.0.286
         env:
           # バックグラウンドを有効化しておくとレビューが投稿されずにワークフローが終了するため、無効化
           CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
